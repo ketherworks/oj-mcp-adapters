@@ -2,6 +2,23 @@ import { describe, expect, test } from "vitest";
 import { CodeforcesUpstreamCoordinator, type CoordinatorStorage } from "../src/coordinator.js";
 
 describe("CodeforcesUpstreamCoordinator", () => {
+  test("calls the Worker global fetch without binding a receiver", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = function (this: unknown) {
+      if (this !== undefined) {
+        throw new TypeError("Illegal invocation");
+      }
+      return Promise.resolve(new Response("{}", { status: 503 }));
+    } as typeof fetch;
+
+    try {
+      const coordinator = new CodeforcesUpstreamCoordinator({ storage: new MemoryStorage(), now: () => 0 });
+      await expect(coordinator.fetchProblemset()).resolves.toMatchObject({ status: 503 });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("coalesces concurrent cache misses into one official API request", async () => {
     const storage = new MemoryStorage();
     let fetchCount = 0;

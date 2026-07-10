@@ -34,7 +34,8 @@ export class CodeforcesUpstreamCoordinator {
 
   constructor(options: CodeforcesUpstreamCoordinatorOptions) {
     this.storage = options.storage;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    const fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = (input, init) => fetchImpl(input, init);
     this.now = options.now ?? Date.now;
     this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.cacheTtlMs = options.cacheTtlMs ?? 10 * 60_000;

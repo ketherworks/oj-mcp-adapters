@@ -4,6 +4,23 @@ import type { CodeforcesRateLimiter } from "../src/rateLimiter.js";
 import { loadFixture } from "./fixtureLoader.js";
 
 describe("CodeforcesApiClient", () => {
+  test("calls the default fetch without binding a receiver", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = function (this: unknown) {
+      if (this !== undefined) {
+        throw new TypeError("Illegal invocation");
+      }
+      return Promise.resolve(new Response(JSON.stringify({ status: "OK", result: { problems: [], problemStatistics: [] } })));
+    } as typeof fetch;
+
+    try {
+      const client = new CodeforcesApiClient({ limiter: immediateLimiter() });
+      await expect(client.getProblemset()).resolves.toMatchObject({ status: "OK" });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test("fetches and validates the official problemset response", async () => {
     const payload = await loadFixture("problemset-ok.json");
     const client = new CodeforcesApiClient({

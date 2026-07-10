@@ -59,7 +59,8 @@ export class CodeforcesApiClient {
   private readonly baseUrl: string;
 
   constructor(options: CodeforcesApiClientOptions = {}) {
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    const fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = (input, init) => fetchImpl(input, init);
     this.limiter = options.limiter ?? new CodeforcesRateLimiter();
     this.baseUrl = options.baseUrl ?? "https://codeforces.com/api";
   }
