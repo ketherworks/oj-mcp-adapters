@@ -1,0 +1,15 @@
+{
+  "status": "OK",
+  "result": {
+    "problems": [
+      {
+        "contestId": 4,
+        "index": "A",
+        "name": "Watermelon",
+        "type": "PROGRAMMING",
+        "rating": 800,
+        "tags": ["math"]
+      }
+    ]
+  }
+}

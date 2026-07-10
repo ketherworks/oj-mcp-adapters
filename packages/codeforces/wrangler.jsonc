@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler",
+  "name": "codeforces-oj-mcp",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-07-10",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CODEFORCES_COORDINATOR",
+        "class_name": "CodeforcesCoordinator"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["CodeforcesCoordinator"]
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "status": "OK",
+  "result": {
+    "problems": [
+      {
+        "contestId": 4,
+        "index": "A",
+        "name": "Watermelon",
+        "type": "PROGRAMMING",
+        "rating": 800,
+        "tags": ["brute force", "math"]
+      },
+      {
+        "contestId": 71,
+        "index": "A",
+        "name": "Way Too Long Words",
+        "type": "PROGRAMMING",
+        "rating": 800,
+        "tags": ["strings"]
+      }
+    ],
+    "problemStatistics": [
+      { "contestId": 4, "index": "A", "solvedCount": 215000 },
+      { "contestId": 71, "index": "A", "solvedCount": 480000 }
+    ]
+  }
+}
