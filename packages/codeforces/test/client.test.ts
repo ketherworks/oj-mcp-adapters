@@ -58,6 +58,24 @@ describe("CodeforcesApiClient", () => {
 
     await expect(client.getProblemset()).rejects.toMatchObject<Partial<CodeforcesApiError>>({ code: "upstream.schema_changed" });
   });
+
+  test("distinguishes real timeouts from other upstream fetch failures", async () => {
+    const unavailable = new CodeforcesApiClient({
+      fetchImpl: async () => {
+        throw new Error("Durable Object storage failed");
+      },
+      limiter: immediateLimiter()
+    });
+    const timeout = new CodeforcesApiClient({
+      fetchImpl: async () => {
+        throw new DOMException("Timed out", "TimeoutError");
+      },
+      limiter: immediateLimiter()
+    });
+
+    await expect(unavailable.getProblemset()).rejects.toMatchObject({ code: "upstream.unavailable" });
+    await expect(timeout.getProblemset()).rejects.toMatchObject({ code: "network.timeout" });
+  });
 });
 
 function immediateLimiter(): CodeforcesRateLimiter {

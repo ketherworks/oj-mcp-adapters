@@ -39,6 +39,28 @@ describe("CodeforcesUpstreamCoordinator", () => {
     await expect(responses[1].json()).resolves.toMatchObject({ status: "OK" });
   });
 
+  test("chunks problemset responses larger than a Durable Object SQLite value", async () => {
+    const storage = new MemoryStorage(1_000_000);
+    const largeBody = JSON.stringify({ status: "OK", result: { payload: "x".repeat(2_100_000) } });
+    let fetchCount = 0;
+    const coordinator = new CodeforcesUpstreamCoordinator({
+      storage,
+      fetchImpl: async () => {
+        fetchCount += 1;
+        return new Response(largeBody, { status: 200 });
+      },
+      now: () => 1_000,
+      cacheTtlMs: 60_000
+    });
+
+    const first = await coordinator.fetchProblemset();
+    const second = await coordinator.fetchProblemset();
+
+    expect(fetchCount).toBe(1);
+    expect((await first.text()).length).toBe(largeBody.length);
+    expect((await second.text()).length).toBe(largeBody.length);
+  });
+
   test("serializes uncached upstream requests at least two seconds apart", async () => {
     const storage = new MemoryStorage();
     let now = 0;
@@ -66,11 +88,16 @@ describe("CodeforcesUpstreamCoordinator", () => {
 class MemoryStorage implements CoordinatorStorage {
   private readonly values = new Map<string, unknown>();
 
+  constructor(private readonly maxSerializedChars = Number.POSITIVE_INFINITY) {}
+
   async get<T>(key: string): Promise<T | undefined> {
     return this.values.get(key) as T | undefined;
   }
 
   async put<T>(key: string, value: T): Promise<void> {
+    if (JSON.stringify(value).length > this.maxSerializedChars) {
+      throw new Error("string or blob too big: SQLITE_TOOBIG");
+    }
     this.values.set(key, value);
   }
 }

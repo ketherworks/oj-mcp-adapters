@@ -73,7 +73,10 @@ export class CodeforcesApiClient {
           headers: { Accept: "application/json", "User-Agent": "oj-mcp-codeforces/0.1.0" }
         });
       } catch (error) {
-        throw new CodeforcesApiError("network.timeout", error instanceof Error ? error.message : String(error));
+        throw new CodeforcesApiError(
+          isTimeoutError(error) ? "network.timeout" : "upstream.unavailable",
+          error instanceof Error ? error.message : String(error)
+        );
       }
 
       if (response.status === 429) {
@@ -118,4 +121,19 @@ function retryAfterMilliseconds(response: Response): number | undefined {
   }
   const seconds = Number(value);
   return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1_000 : undefined;
+}
+
+function isTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const candidate = error as { name?: unknown; code?: unknown; cause?: { code?: unknown } };
+  return (
+    candidate.name === "TimeoutError" ||
+    candidate.name === "AbortError" ||
+    candidate.code === "ETIMEDOUT" ||
+    candidate.code === "UND_ERR_CONNECT_TIMEOUT" ||
+    candidate.cause?.code === "ETIMEDOUT" ||
+    candidate.cause?.code === "UND_ERR_CONNECT_TIMEOUT"
+  );
 }

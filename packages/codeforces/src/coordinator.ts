@@ -17,11 +17,13 @@ interface CachedResponse {
   status: number;
   statusText: string;
   headers: Array<[string, string]>;
-  body: string;
+  bodyChunkCount: number;
 }
 
 const CACHE_KEY = "problemset-response/v1";
+const CACHE_CHUNK_PREFIX = "problemset-response-chunk/v1/";
 const LAST_STARTED_AT_KEY = "upstream-last-started-at/v1";
+const CACHE_CHUNK_CHARACTERS = 250_000;
 
 export class CodeforcesUpstreamCoordinator {
   private readonly storage: CoordinatorStorage;
@@ -54,7 +56,10 @@ export class CodeforcesUpstreamCoordinator {
   private async fetchProblemsetSerialized(): Promise<Response> {
     const cached = await this.storage.get<CachedResponse>(CACHE_KEY);
     if (cached && cached.expiresAt > this.now()) {
-      return restoreResponse(cached);
+      const restored = await this.restoreCachedResponse(cached);
+      if (restored) {
+        return restored;
+      }
     }
 
     const lastStartedAt = await this.storage.get<number>(LAST_STARTED_AT_KEY);
@@ -69,11 +74,22 @@ export class CodeforcesUpstreamCoordinator {
     const response = await this.fetchImpl("https://codeforces.com/api/problemset.problems", {
       headers: { Accept: "application/json", "User-Agent": "oj-mcp-codeforces/0.1.0" }
     });
-    const record = await captureResponse(response, this.now() + this.cacheTtlMs);
+    const captured = await captureResponse(response, this.now() + this.cacheTtlMs);
     if (response.ok && this.cacheTtlMs > 0) {
-      await this.storage.put(CACHE_KEY, record);
+      await Promise.all(captured.bodyChunks.map((chunk, index) => this.storage.put(`${CACHE_CHUNK_PREFIX}${index}`, chunk)));
+      await this.storage.put(CACHE_KEY, captured.metadata);
     }
-    return restoreResponse(record);
+    return restoreResponse(captured.metadata, captured.body);
+  }
+
+  private async restoreCachedResponse(metadata: CachedResponse): Promise<Response | undefined> {
+    const chunks = await Promise.all(
+      Array.from({ length: metadata.bodyChunkCount }, (_, index) => this.storage.get<string>(`${CACHE_CHUNK_PREFIX}${index}`))
+    );
+    if (chunks.some((chunk) => chunk === undefined)) {
+      return undefined;
+    }
+    return restoreResponse(metadata, chunks.join(""));
   }
 }
 
@@ -96,22 +112,34 @@ export class CodeforcesCoordinator {
   }
 }
 
-async function captureResponse(response: Response, expiresAt: number): Promise<CachedResponse> {
+async function captureResponse(
+  response: Response,
+  expiresAt: number
+): Promise<{ metadata: CachedResponse; body: string; bodyChunks: string[] }> {
   const headers: Array<[string, string]> = [];
   response.headers.forEach((value, key) => headers.push([key, value]));
+  const body = await response.text();
+  const bodyChunks: string[] = [];
+  for (let offset = 0; offset < body.length; offset += CACHE_CHUNK_CHARACTERS) {
+    bodyChunks.push(body.slice(offset, offset + CACHE_CHUNK_CHARACTERS));
+  }
   return {
-    expiresAt,
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-    body: await response.text()
+    metadata: {
+      expiresAt,
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+      bodyChunkCount: bodyChunks.length
+    },
+    body,
+    bodyChunks
   };
 }
 
-function restoreResponse(record: CachedResponse): Response {
-  return new Response(record.body, {
-    status: record.status,
-    statusText: record.statusText,
-    headers: record.headers
+function restoreResponse(metadata: CachedResponse, body: string): Response {
+  return new Response(body, {
+    status: metadata.status,
+    statusText: metadata.statusText,
+    headers: metadata.headers
   });
 }
