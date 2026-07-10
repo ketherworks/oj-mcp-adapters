@@ -1,0 +1,354 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifacts": {
+      "additionalProperties": false,
+      "properties": {
+        "active": {
+          "additionalProperties": false,
+          "properties": {
+            "arch": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "archiveSha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "commit": {
+              "pattern": "^[a-f0-9]{40}$",
+              "type": "string"
+            },
+            "filesSha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "license": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "os": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "repository": {
+              "format": "uri",
+              "type": "string"
+            },
+            "runtime": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "sbomSha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "signatureOrAttestation": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "sourceUrl": {
+              "format": "uri",
+              "type": "string"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "sourceUrl",
+            "repository",
+            "version",
+            "commit",
+            "os",
+            "arch",
+            "runtime",
+            "archiveSha256",
+            "filesSha256",
+            "sbomSha256",
+            "license"
+          ],
+          "type": "object"
+        },
+        "rollback": {
+          "additionalProperties": false,
+          "properties": {
+            "arch": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "archiveSha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "commit": {
+              "pattern": "^[a-f0-9]{40}$",
+              "type": "string"
+            },
+            "filesSha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "license": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "os": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array"
+            },
+            "repository": {
+              "format": "uri",
+              "type": "string"
+            },
+            "runtime": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "sbomSha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            "signatureOrAttestation": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "sourceUrl": {
+              "format": "uri",
+              "type": "string"
+            },
+            "version": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "sourceUrl",
+            "repository",
+            "version",
+            "commit",
+            "os",
+            "arch",
+            "runtime",
+            "archiveSha256",
+            "filesSha256",
+            "sbomSha256",
+            "license"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "active",
+        "rollback"
+      ],
+      "type": "object"
+    },
+    "entrypoints": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "allowedRisks": {
+            "items": {
+              "enum": [
+                "R0_public_read",
+                "R1_private_read",
+                "R2_local_execute",
+                "R3_prepare_write",
+                "R4_real_submit"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "args": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "command": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedTools": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "canonical": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "capabilities",
+                        "health"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "enum": [
+                        "searchProblems",
+                        "fetchProblem",
+                        "importProblem",
+                        "fetchProfile",
+                        "listSubmissions",
+                        "localRun",
+                        "platformRun",
+                        "prepareSubmission",
+                        "commitSubmission",
+                        "pollSubmission"
+                      ],
+                      "type": "string"
+                    }
+                  ]
+                },
+                "risk": {
+                  "enum": [
+                    "R0_public_read",
+                    "R1_private_read",
+                    "R2_local_execute",
+                    "R3_prepare_write",
+                    "R4_real_submit"
+                  ],
+                  "type": "string"
+                },
+                "schemaSha256": {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                "upstream": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "canonical",
+                "upstream",
+                "schemaSha256",
+                "risk"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "id": {
+            "enum": [
+              "agentReadOnly",
+              "productPrivate",
+              "remotePublic"
+            ],
+            "type": "string"
+          },
+          "secretRefs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "envName": {
+                  "pattern": "^[A-Z][A-Z0-9_]*$",
+                  "type": "string"
+                },
+                "logicalName": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "secretStorageKey": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "logicalName",
+                "secretStorageKey",
+                "envName",
+                "required"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "transport": {
+            "enum": [
+              "local_stdio",
+              "remote_http"
+            ],
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "transport",
+          "expectedTools",
+          "allowedRisks"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "expectedProtocol": {
+      "const": "2025-11-25",
+      "type": "string"
+    },
+    "installDirectoryLayout": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "minimumExtensionVersion": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "platform": {
+      "enum": [
+        "luogu",
+        "leetcode",
+        "nowcoder",
+        "codeforces",
+        "atcoder"
+      ],
+      "type": "string"
+    },
+    "providerId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "oj-provider-manifest/v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "providerId",
+    "platform",
+    "minimumExtensionVersion",
+    "installDirectoryLayout",
+    "artifacts",
+    "entrypoints",
+    "expectedProtocol"
+  ],
+  "type": "object"
+}

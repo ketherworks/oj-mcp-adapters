@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "allowedPlatforms": {
+      "items": {
+        "enum": [
+          "luogu",
+          "leetcode",
+          "nowcoder",
+          "codeforces",
+          "atcoder"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "expiresInMs": {
+      "maximum": 60000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "requestId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "oj.import-window-request/v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "allowedPlatforms",
+    "expiresInMs"
+  ],
+  "type": "object"
+}

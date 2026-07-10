@@ -1,0 +1,17 @@
+{
+  "name": "@kaiserunix/oj-mcp-server-common",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "LICENSE"],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@kaiserunix/oj-mcp-contracts": "0.1.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "4.3.6"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attemptId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "codeSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "evidenceId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "observedAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "platformSubmissionId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "problem": {
+      "additionalProperties": false,
+      "properties": {
+        "canonicalId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "contest": {
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "nativeId": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "nativeId"
+          ],
+          "type": "object"
+        },
+        "nativeId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "platform": {
+          "enum": [
+            "luogu",
+            "leetcode",
+            "nowcoder",
+            "codeforces",
+            "atcoder"
+          ],
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": "oj.problem-ref/v1",
+          "type": "string"
+        },
+        "site": {
+          "enum": [
+            "global",
+            "cn"
+          ],
+          "type": "string"
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "adapterId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "adapterVersion": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "confidence": {
+              "enum": [
+                "authoritative",
+                "derived",
+                "user_supplied"
+              ],
+              "type": "string"
+            },
+            "etag": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "fetchedAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "official_api",
+                "official_open_platform",
+                "page_adapter",
+                "browser_companion",
+                "community_adapter",
+                "manual"
+              ],
+              "type": "string"
+            },
+            "rawRef": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "sourceUrl": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "adapterId",
+            "adapterVersion",
+            "fetchedAt",
+            "sourceUrl",
+            "confidence"
+          ],
+          "type": "object"
+        },
+        "url": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "platform",
+        "nativeId",
+        "canonicalId",
+        "url",
+        "source"
+      ],
+      "type": "object"
+    },
+    "schemaVersion": {
+      "const": "oj.submission-evidence/v1",
+      "type": "string"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "adapterVersion": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "confidence": {
+          "enum": [
+            "authoritative",
+            "derived",
+            "user_supplied"
+          ],
+          "type": "string"
+        },
+        "etag": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "fetchedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "official_api",
+            "official_open_platform",
+            "page_adapter",
+            "browser_companion",
+            "community_adapter",
+            "manual"
+          ],
+          "type": "string"
+        },
+        "rawRef": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sourceUrl": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "adapterId",
+        "adapterVersion",
+        "fetchedAt",
+        "sourceUrl",
+        "confidence"
+      ],
+      "type": "object"
+    },
+    "submissionOperationId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "submissionUrl": {
+      "format": "uri",
+      "type": "string"
+    },
+    "terminal": {
+      "type": "boolean"
+    },
+    "verdict": {
+      "enum": [
+        "queued",
+        "judging",
+        "accepted",
+        "wrong_answer",
+        "compile_error",
+        "runtime_error",
+        "time_limit",
+        "memory_limit",
+        "output_limit",
+        "idleness_limit",
+        "security_violation",
+        "partial",
+        "skipped",
+        "unknown"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "evidenceId",
+    "attemptId",
+    "submissionOperationId",
+    "problem",
+    "verdict",
+    "codeSha256",
+    "observedAt",
+    "terminal",
+    "source"
+  ],
+  "type": "object"
+}

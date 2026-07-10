@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "languages": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "displayName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "languageKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "platformLanguageId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "languageKey",
+          "platformLanguageId",
+          "displayName"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "operations": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "auth": {
+            "enum": [
+              "none",
+              "oauth2",
+              "api_key",
+              "session_cookie",
+              "browser"
+            ],
+            "type": "string"
+          },
+          "checkedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "type": "string"
+          },
+          "compliance": {
+            "enum": [
+              "official",
+              "unofficial",
+              "restricted",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "enum": [
+              "searchProblems",
+              "fetchProblem",
+              "importProblem",
+              "fetchProfile",
+              "listSubmissions",
+              "localRun",
+              "platformRun",
+              "prepareSubmission",
+              "commitSubmission",
+              "pollSubmission"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "risk": {
+            "enum": [
+              "R0_public_read",
+              "R1_private_read",
+              "R2_local_execute",
+              "R3_prepare_write",
+              "R4_real_submit"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "available",
+              "auth_required",
+              "unsupported",
+              "disabled_by_policy",
+              "degraded"
+            ],
+            "type": "string"
+          },
+          "toolName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "transport": {
+            "enum": [
+              "remote_http",
+              "local_stdio"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "transport",
+          "auth",
+          "risk",
+          "compliance",
+          "checkedAt"
+        ],
+        "type": "object"
+      },
+      "propertyNames": {
+        "enum": [
+          "searchProblems",
+          "fetchProblem",
+          "importProblem",
+          "fetchProfile",
+          "listSubmissions",
+          "localRun",
+          "platformRun",
+          "prepareSubmission",
+          "commitSubmission",
+          "pollSubmission"
+        ],
+        "type": "string"
+      },
+      "required": [
+        "searchProblems",
+        "fetchProblem",
+        "importProblem",
+        "fetchProfile",
+        "listSubmissions",
+        "localRun",
+        "platformRun",
+        "prepareSubmission",
+        "commitSubmission",
+        "pollSubmission"
+      ],
+      "type": "object"
+    },
+    "platform": {
+      "enum": [
+        "luogu",
+        "leetcode",
+        "nowcoder",
+        "codeforces",
+        "atcoder"
+      ],
+      "type": "string"
+    },
+    "protocolVersion": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "providerId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "providerVersion": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "oj.capabilities/v1",
+      "type": "string"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "adapterVersion": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "confidence": {
+          "enum": [
+            "authoritative",
+            "derived",
+            "user_supplied"
+          ],
+          "type": "string"
+        },
+        "etag": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "fetchedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "official_api",
+            "official_open_platform",
+            "page_adapter",
+            "browser_companion",
+            "community_adapter",
+            "manual"
+          ],
+          "type": "string"
+        },
+        "rawRef": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sourceUrl": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "adapterId",
+        "adapterVersion",
+        "fetchedAt",
+        "sourceUrl",
+        "confidence"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "providerId",
+    "providerVersion",
+    "platform",
+    "protocolVersion",
+    "operations",
+    "languages",
+    "source"
+  ],
+  "type": "object"
+}

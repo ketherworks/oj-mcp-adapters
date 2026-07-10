@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "codeArtifactId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "codeSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "confirmationProof": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "intentId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "requestId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "oj.submit-commit/v1",
+      "type": "string"
+    },
+    "submissionOperationId": {
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "intentId",
+    "submissionOperationId",
+    "codeArtifactId",
+    "confirmationProof",
+    "codeSha256"
+  ],
+  "type": "object"
+}

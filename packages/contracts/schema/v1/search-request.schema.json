@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cursor": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "limit": {
+      "maximum": 50,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "locale": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "platform": {
+      "enum": [
+        "luogu",
+        "leetcode",
+        "nowcoder",
+        "codeforces",
+        "atcoder"
+      ],
+      "type": "string"
+    },
+    "query": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "requestId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "oj.search-request/v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "platform",
+    "query",
+    "limit"
+  ],
+  "type": "object"
+}

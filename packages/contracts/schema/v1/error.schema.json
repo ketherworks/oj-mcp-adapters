@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "enum": [
+        "request.invalid",
+        "capability.unsupported",
+        "policy.blocked",
+        "auth.required",
+        "auth.invalid",
+        "auth.forbidden",
+        "challenge.required",
+        "resource.not_found",
+        "rate_limited",
+        "network.timeout",
+        "upstream.unavailable",
+        "upstream.schema_changed",
+        "language.unsupported",
+        "runner.unavailable",
+        "runner.sandbox_required",
+        "confirmation.required",
+        "confirmation.expired",
+        "confirmation.mismatch",
+        "submission.closed",
+        "submission.rejected",
+        "submission.outcome_unknown",
+        "internal"
+      ],
+      "type": "string"
+    },
+    "httpStatus": {
+      "maximum": 599,
+      "minimum": 100,
+      "type": "integer"
+    },
+    "jobId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "layer": {
+      "enum": [
+        "broker",
+        "transport",
+        "protocol",
+        "auth",
+        "upstream",
+        "runner",
+        "policy"
+      ],
+      "type": "string"
+    },
+    "message": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "platform": {
+      "enum": [
+        "luogu",
+        "leetcode",
+        "nowcoder",
+        "codeforces",
+        "atcoder"
+      ],
+      "type": "string"
+    },
+    "providerId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "requestId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "retryAfterMs": {
+      "minimum": 0,
+      "type": "number"
+    },
+    "retryPolicy": {
+      "enum": [
+        "never",
+        "safe_read",
+        "poll_only",
+        "after_user_action"
+      ],
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "oj.error/v1",
+      "type": "string"
+    },
+    "upstreamCode": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "userAction": {
+      "enum": [
+        "none",
+        "retry",
+        "sign_in",
+        "solve_challenge",
+        "change_language",
+        "open_logs"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "code",
+    "layer",
+    "message",
+    "retryPolicy",
+    "userAction"
+  ],
+  "type": "object"
+}

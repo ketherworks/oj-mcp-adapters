@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attemptId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "cases": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "actualOutputSha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "expectedOutputSha256": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "memoryBytes": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ordinal": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer"
+          },
+          "stderr": {
+            "type": "string"
+          },
+          "stdout": {
+            "type": "string"
+          },
+          "timeMs": {
+            "minimum": 0,
+            "type": "number"
+          },
+          "verdict": {
+            "enum": [
+              "queued",
+              "judging",
+              "accepted",
+              "wrong_answer",
+              "compile_error",
+              "runtime_error",
+              "time_limit",
+              "memory_limit",
+              "output_limit",
+              "idleness_limit",
+              "security_violation",
+              "partial",
+              "skipped",
+              "unknown"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "ordinal",
+          "verdict"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "codeSha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "completedAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "jobId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "local",
+        "platform"
+      ],
+      "type": "string"
+    },
+    "requestId": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "oj.run-result/v1",
+      "type": "string"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "adapterId": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "adapterVersion": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "confidence": {
+          "enum": [
+            "authoritative",
+            "derived",
+            "user_supplied"
+          ],
+          "type": "string"
+        },
+        "etag": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "fetchedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "official_api",
+            "official_open_platform",
+            "page_adapter",
+            "browser_companion",
+            "community_adapter",
+            "manual"
+          ],
+          "type": "string"
+        },
+        "rawRef": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sourceUrl": {
+          "format": "uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "adapterId",
+        "adapterVersion",
+        "fetchedAt",
+        "sourceUrl",
+        "confidence"
+      ],
+      "type": "object"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "queued",
+        "running",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "queued",
+        "judging",
+        "accepted",
+        "wrong_answer",
+        "compile_error",
+        "runtime_error",
+        "time_limit",
+        "memory_limit",
+        "output_limit",
+        "idleness_limit",
+        "security_violation",
+        "partial",
+        "skipped",
+        "unknown"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "requestId",
+    "jobId",
+    "attemptId",
+    "mode",
+    "state",
+    "verdict",
+    "codeSha256",
+    "cases",
+    "startedAt",
+    "source"
+  ],
+  "type": "object"
+}
