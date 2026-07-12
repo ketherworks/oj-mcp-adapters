@@ -42,14 +42,30 @@ export async function parseAtCoderProblem(
   }
   const taskContainer = findFirst(root, (element) => {
     const children = directElements(element);
-    return children.some((child) => hasClass(child, "h2")) && children.some((child) => hasClass(child, `lang-${page.locale}`));
+    if (!children.some((child) => hasClass(child, "h2"))) return false;
+    if (children.some((child) => hasClass(child, `lang-${page.locale}`))) return true;
+    const statement = children.find((child) => child.attributes.id === "task-statement");
+    return statement !== undefined && findFirst(statement, (child) => hasClass(child, `lang-${page.locale}`)) !== undefined;
   });
   if (!taskContainer) throw drift("AtCoder did not expose the audited task container structure.");
-  const localeRoot = directElements(taskContainer).find((element) => hasClass(element, `lang-${page.locale}`));
+  const taskChildren = directElements(taskContainer);
+  const statementContainer = taskChildren.find((element) => element.attributes.id === "task-statement");
+  const localeRoot =
+    taskChildren.find((element) => hasClass(element, `lang-${page.locale}`)) ??
+    (statementContainer
+      ? findFirst(statementContainer, (element) => hasClass(element, `lang-${page.locale}`))
+      : undefined);
   if (!localeRoot) throw drift(`AtCoder did not expose a ${page.locale} statement container.`);
 
-  const titleElement = directElements(taskContainer).find((element) => hasClass(element, "h2"));
-  const titleMatch = titleElement ? /^([a-zA-Z0-9]+)\s*-\s*(.+)$/s.exec(plainText(titleElement)) : undefined;
+  const titleElement = taskChildren.find((element) => hasClass(element, "h2"));
+  const titleText = titleElement
+    ? titleElement.children
+        .filter((child): child is Extract<HtmlNode, { type: "text" }> => child.type === "text")
+        .map((child) => child.value)
+        .join(" ")
+        .trim()
+    : undefined;
+  const titleMatch = titleText ? /^([a-zA-Z0-9]+)\s*-\s*(.+)$/s.exec(titleText) : undefined;
   if (!titleMatch) throw drift("AtCoder task title no longer matches the audited heading structure.");
 
   const sections = findAll(localeRoot, (element) => element.name === "section")

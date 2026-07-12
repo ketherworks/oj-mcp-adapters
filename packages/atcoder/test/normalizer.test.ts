@@ -36,6 +36,20 @@ describe("AtCoder problem normalizer", () => {
     expect(ojProblemDocumentSchema.parse(document)).toEqual(document);
   });
 
+  test("normalizes the current nested task wrapper without including the editorial link in the title", async () => {
+    const document = await parseAtCoderProblem(page(await loadHtmlFixture("current-task-wrapper.html")), {
+      fetchedAt: "2026-07-12T00:00:00.000Z",
+      adapterVersion: "0.1.0"
+    });
+
+    expect(document).toMatchObject({
+      title: "Product",
+      ref: { nativeId: "abc086/abc086_a", contest: { index: "A" } },
+      samples: [{ ordinal: 1, input: "3 4", output: "Even" }],
+      limits: { timeMs: 2_000, memoryBytes: 268_435_456 }
+    });
+  });
+
   test("normalizes Japanese ARC sections and takes the displayed contest index from the page", async () => {
     const html = await loadHtmlFixture("arc065-a-ja.html");
     const document = await parseAtCoderProblem(

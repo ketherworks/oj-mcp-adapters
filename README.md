@@ -12,6 +12,7 @@ The source is organized as an npm workspace, while every platform builds and dep
 - `@kaiserunix/nowcoder-mcp-server`: local stdio adapter for public NowCoder problem pages.
 - `@kaiserunix/atcoder-mcp-server`: anonymous official AtCoder HTML provider.
 - `@kaiserunix/luogu-mcp-server`: anonymous Luogu search and problem provider.
+- `@kaiserunix/oj-mcp-node-http-host`: private-origin HTTP wrapper for AtCoder and Luogu.
 
 ## Deployment Matrix
 
@@ -19,9 +20,20 @@ The source is organized as an npm workspace, while every platform builds and dep
 | --- | --- | --- | --- |
 | Codeforces | Cloudflare Worker | Yes | Official public API |
 | LeetCode Global/CN | No | External local provider | Audited upstream MCP; see [LeetCode provider](docs/providers/leetcode.md) |
-| AtCoder | Cloudflare Worker | Yes | Official public HTML |
-| Luogu | Cloudflare Worker | Yes | Anonymous public page endpoints |
+| AtCoder | Trusted Node HTTPS origin | Yes | Official public HTML |
+| Luogu | Trusted Node HTTPS origin | Yes | Anonymous public page endpoints |
 | NowCoder | No | Yes | Public page adapter with DNS pinning |
+
+AtCoder and Luogu can also run behind the private
+[`node-http-host`](packages/node-http-host/README.md) wrapper when a judge
+rejects shared Cloudflare Worker egress. The wrapper preserves the exact MCP
+tool surface and sits behind a trusted HTTPS reverse proxy; it is not a
+general-purpose fetch relay.
+
+The Worker entrypoints remain buildable for controlled deployments, but live
+upstream reads must pass from the chosen egress before publication. The
+current shared Cloudflare deployment is used only for Codeforces because its
+official API passed that gate. See [production endpoints](docs/deployment/production-endpoints.md).
 
 Remote Workers expose only anonymous `R0_public_read` tools. They enforce bounded request bodies, reject JSON-RPC batches, and bound upstream concurrency, response sizes, and timeouts. Credentials, browser sessions, private profiles, code execution, and submissions are not accepted by these entrypoints. NowCoder remains local because its page and anti-bot behavior is not suitable for a shared remote service. LeetCode is intentionally excluded from this repository's source, packages, and deployments.
 

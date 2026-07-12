@@ -6,6 +6,7 @@
     { "path": "./packages/codeforces" },
     { "path": "./packages/nowcoder" },
     { "path": "./packages/atcoder" },
-    { "path": "./packages/luogu" }
+    { "path": "./packages/luogu" },
+    { "path": "./packages/node-http-host" }
   ]
 }
