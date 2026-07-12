@@ -3,6 +3,9 @@
   "references": [
     { "path": "./packages/contracts" },
     { "path": "./packages/server-common" },
-    { "path": "./packages/codeforces" }
+    { "path": "./packages/codeforces" },
+    { "path": "./packages/nowcoder" },
+    { "path": "./packages/atcoder" },
+    { "path": "./packages/luogu" }
   ]
 }

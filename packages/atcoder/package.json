@@ -1,0 +1,32 @@
+{
+  "name": "@kaiserunix/atcoder-mcp-server",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "atcoder-mcp-server": "dist/index.js"
+  },
+  "files": ["dist/**/*.js", "dist/**/*.js.map", "dist/**/*.d.ts", "dist/**/*.d.ts.map", "wrangler.jsonc", "LICENSE", "README.md"],
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && tsc -b",
+    "postbuild": "node scripts/set-bin-mode.mjs",
+    "prepack": "npm run build",
+    "start": "node dist/index.js",
+    "test": "vitest run test",
+    "deploy:cf": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "@kaiserunix/oj-mcp-contracts": "0.1.0",
+    "@kaiserunix/oj-mcp-server-common": "0.1.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "parse5": "8.0.1",
+    "parse5-sax-parser": "8.0.0",
+    "zod": "4.3.6"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}

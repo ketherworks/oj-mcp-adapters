@@ -1,0 +1,27 @@
+{
+  "data": {
+    "problems": {
+      "count": 4,
+      "result": [
+        {
+          "pid": "P1305",
+          "name": "新二叉树",
+          "difficulty": 2,
+          "tags": [72, "tree"]
+        },
+        {
+          "pid": "P4913",
+          "title": "二叉树深度",
+          "difficulty": 1,
+          "tags": [72]
+        },
+        {
+          "pid": "B3642",
+          "name": "二叉树的遍历",
+          "difficulty": 2,
+          "tags": []
+        }
+      ]
+    }
+  }
+}

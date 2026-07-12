@@ -3,7 +3,7 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "dist/.tsbuildinfo"
+    "tsBuildInfoFile": "../../node_modules/.cache/codeforces-mcp/tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
   "references": [

@@ -8,15 +8,35 @@ import type {
   OjSearchResult,
   OjSourceRef
 } from "@kaiserunix/oj-mcp-contracts";
-import { ojCapabilitiesSchema, ojProviderHealthSchema, ojSearchRequestSchema, ojSearchResultSchema } from "@kaiserunix/oj-mcp-contracts";
-import { CodeforcesApiClient, CodeforcesApiError } from "./client.js";
+import { ojCapabilitiesSchema, ojProviderHealthSchema, ojSearchResultSchema } from "@kaiserunix/oj-mcp-contracts";
+import { z } from "zod";
+import { CodeforcesApiClient, CodeforcesApiError, CodeforcesRequestCancelledError } from "./client.js";
 import { normalizeCodeforcesProblemset, searchCodeforcesProblems } from "./normalizers.js";
+import type { CodeforcesUpstreamHealthObservation } from "./coordinator.js";
+import { abortable, BoundedAdmission, CodeforcesQueueFullError } from "./admission.js";
 
 export interface CodeforcesProviderOptions {
   client?: CodeforcesApiClient;
   cacheTtlMs?: number;
   now?: () => number;
   nowIso?: () => string;
+  healthReader?: (options?: CodeforcesOperationOptions) => Promise<CodeforcesUpstreamHealthObservation | undefined>;
+  maxConcurrentWaiters?: number;
+  maxQueuedWaiters?: number;
+}
+
+export const codeforcesSearchInputSchema = z
+  .object({
+    schemaVersion: z.literal("oj.search-request/v1"),
+    requestId: z.string().min(1).max(128),
+    platform: z.literal("codeforces"),
+    query: z.string().trim().min(1).max(256),
+    limit: z.number().int().min(1).max(50)
+  })
+  .strict();
+
+export interface CodeforcesOperationOptions {
+  signal?: AbortSignal;
 }
 
 export class CodeforcesProvider {
@@ -24,6 +44,8 @@ export class CodeforcesProvider {
   private readonly cacheTtlMs: number;
   private readonly now: () => number;
   private readonly nowIso: () => string;
+  private readonly healthReader?: CodeforcesProviderOptions["healthReader"];
+  private readonly waiterAdmission: BoundedAdmission;
   private cache?: { expiresAt: number; summaries: OjProblemSummary[] };
   private loading?: Promise<OjProblemSummary[]>;
   private lastError?: CodeforcesApiError;
@@ -33,11 +55,19 @@ export class CodeforcesProvider {
     this.cacheTtlMs = options.cacheTtlMs ?? 10 * 60_000;
     this.now = options.now ?? Date.now;
     this.nowIso = options.nowIso ?? (() => new Date().toISOString());
+    this.healthReader = options.healthReader;
+    this.waiterAdmission = new BoundedAdmission(
+      options.maxConcurrentWaiters ?? 8,
+      options.maxQueuedWaiters ?? 32,
+      "Codeforces shared upstream load"
+    );
   }
 
-  async search(input: OjSearchRequest): Promise<OjSearchResult> {
-    const request = ojSearchRequestSchema.parse(input);
-    const summaries = await this.problemSummaries();
+  async search(input: OjSearchRequest, options: CodeforcesOperationOptions = {}): Promise<OjSearchResult> {
+    const parsed = codeforcesSearchInputSchema.safeParse(input);
+    if (!parsed.success) throw new CodeforcesApiError("request.invalid", "Codeforces search input did not match its strict schema.");
+    const request = parsed.data;
+    const summaries = await this.problemSummaries(options.signal);
     return ojSearchResultSchema.parse({
       schemaVersion: "oj.search-result/v1",
       requestId: request.requestId,
@@ -46,14 +76,14 @@ export class CodeforcesProvider {
     });
   }
 
-  async getProblemMetadata(nativeId: string): Promise<OjProblemSummary | undefined> {
+  async getProblemMetadata(nativeId: string, options: CodeforcesOperationOptions = {}): Promise<OjProblemSummary | undefined> {
     const normalized = nativeId.trim().toLocaleUpperCase();
-    return (await this.problemSummaries()).find((summary) => summary.ref.nativeId.toLocaleUpperCase() === normalized);
+    return (await this.problemSummaries(options.signal)).find((summary) => summary.ref.nativeId.toLocaleUpperCase() === normalized);
   }
 
-  async getCapabilities(): Promise<OjCapabilities> {
+  async getCapabilities(transport: OjCapability["transport"]): Promise<OjCapabilities> {
     const operations = Object.fromEntries(
-      capabilityNames.map((name) => [name, capability(name, this.nowIso())])
+      capabilityNames.map((name) => [name, capability(name, this.nowIso(), transport)])
     ) as Record<OjCapabilityName, OjCapability>;
     return ojCapabilitiesSchema.parse({
       schemaVersion: "oj.capabilities/v1",
@@ -67,48 +97,71 @@ export class CodeforcesProvider {
     });
   }
 
-  async getHealth(): Promise<OjProviderHealth> {
-    const error = this.lastError;
+  async getHealth(options: CodeforcesOperationOptions = {}): Promise<OjProviderHealth> {
+    const persisted = await this.healthReader?.(options);
+    const code = persisted ? persisted.code : this.lastError?.code;
+    const retryAfterMs = persisted ? persisted.retryAfterMs : this.lastError?.retryAfterMs;
     return ojProviderHealthSchema.parse({
       schemaVersion: "oj.provider-health/v1",
       providerId: "codeforces-official-api",
       platform: "codeforces",
       checkedAt: this.nowIso(),
-      overall: error ? "degraded" : "healthy",
+      overall: code === "network.timeout" || code === "upstream.unavailable" ? "unavailable" : code ? "degraded" : "healthy",
       layers: {
-        transport: "pass",
+        transport: code === "network.timeout" ? "fail" : "pass",
         protocol: "pass",
-        schema: error?.code === "upstream.schema_changed" ? "drift" : "pass",
+        schema: code === "upstream.schema_changed" ? "drift" : code ? "unknown" : "pass",
         auth: "not_required",
-        upstream: error?.code === "rate_limited" ? "rate_limited" : error ? "fail" : "pass"
+        upstream:
+          code === "network.timeout" ? "timeout" : code === "rate_limited" ? "rate_limited" : code ? "fail" : "pass"
       },
-      retryAfterMs: error?.retryAfterMs,
-      message: error ? "Codeforces upstream is degraded; retry a public read later." : "Codeforces official API provider is healthy."
+      latencyMs: persisted?.latencyMs,
+      retryAfterMs,
+      message: code ? "Codeforces upstream is degraded; retry a public read later." : "Codeforces official API provider is healthy."
     });
   }
 
-  private async problemSummaries(): Promise<OjProblemSummary[]> {
+  private problemSummaries(signal?: AbortSignal): Promise<OjProblemSummary[]> {
     if (this.cache && this.cache.expiresAt > this.now()) {
-      return this.cache.summaries;
+      return Promise.resolve(this.cache.summaries);
     }
-    if (!this.loading) {
-      this.loading = this.client
-        .getProblemset()
-        .then((payload) => {
-          const summaries = normalizeCodeforcesProblemset(payload, { fetchedAt: this.nowIso(), adapterVersion: "0.1.0" });
-          this.cache = { expiresAt: this.now() + this.cacheTtlMs, summaries };
-          this.lastError = undefined;
-          return summaries;
-        })
-        .catch((error) => {
-          if (error instanceof CodeforcesApiError) this.lastError = error;
-          throw error;
-        })
-        .finally(() => {
-          this.loading = undefined;
-        });
-    }
-    return this.loading;
+    return this.waiterAdmission
+      .run(signal, async () => {
+        if (this.cache && this.cache.expiresAt > this.now()) return this.cache.summaries;
+        const loading = this.loading ?? this.startSharedLoad();
+        return abortable(loading, signal);
+      })
+      .catch((error: unknown) => {
+        if (signal?.aborted) {
+          throw new CodeforcesRequestCancelledError("Codeforces provider wait was cancelled by the caller.", { cause: error });
+        }
+        if (error instanceof CodeforcesQueueFullError) {
+          throw new CodeforcesApiError("rate_limited", error.message, 2_000);
+        }
+        throw error;
+      });
+  }
+
+  private startSharedLoad(): Promise<OjProblemSummary[]> {
+    const loading = this.client
+      .getProblemset()
+      .then((payload) => {
+        const summaries = normalizeCodeforcesProblemset(payload, { fetchedAt: this.nowIso(), adapterVersion: "0.1.0" });
+        this.cache = { expiresAt: this.now() + this.cacheTtlMs, summaries };
+        this.lastError = undefined;
+        return summaries;
+      })
+      .catch((error) => {
+        if (error instanceof CodeforcesApiError) this.lastError = error;
+        throw error;
+      });
+    this.loading = loading;
+    void loading
+      .finally(() => {
+        if (this.loading === loading) this.loading = undefined;
+      })
+      .catch(() => undefined);
+    return loading;
   }
 }
 
@@ -125,13 +178,13 @@ const capabilityNames: OjCapabilityName[] = [
   "pollSubmission"
 ];
 
-function capability(name: OjCapabilityName, checkedAt: string): OjCapability {
+function capability(name: OjCapabilityName, checkedAt: string, transport: OjCapability["transport"]): OjCapability {
   if (name === "searchProblems") {
     return {
       name,
       status: "available",
       toolName: "oj_search_problems",
-      transport: "remote_http",
+      transport,
       auth: "none",
       risk: "R0_public_read",
       compliance: "official",
@@ -143,7 +196,7 @@ function capability(name: OjCapabilityName, checkedAt: string): OjCapability {
       name,
       status: "degraded",
       toolName: "codeforces_get_problem_metadata",
-      transport: "remote_http",
+      transport,
       auth: "none",
       risk: "R0_public_read",
       compliance: "official",
@@ -154,7 +207,7 @@ function capability(name: OjCapabilityName, checkedAt: string): OjCapability {
   return {
     name,
     status: "unsupported",
-    transport: "remote_http",
+    transport,
     auth: "none",
     risk: name === "commitSubmission" ? "R4_real_submit" : "R0_public_read",
     compliance: "official",

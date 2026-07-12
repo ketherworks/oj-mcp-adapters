@@ -4,3 +4,4 @@ coverage/
 .wrangler/
 .dev.vars
 *.log
+*.tsbuildinfo

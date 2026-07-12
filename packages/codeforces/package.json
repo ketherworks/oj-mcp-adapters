@@ -9,16 +9,24 @@
   },
   "files": ["dist", "wrangler.jsonc", "README.md", "LICENSE"],
   "scripts": {
-    "build": "tsc -b",
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -b --pretty false",
+    "prepack": "npm run build",
+    "prepublishOnly": "node scripts/check-publish-platform.mjs",
     "start": "node dist/index.js",
-    "test": "vitest run test",
-    "deploy:cf": "wrangler deploy"
+    "test": "vitest run --config vitest.config.ts test",
+    "test:pack": "node scripts/pack-smoke.mjs",
+    "deploy:cf": "npm run build && wrangler deploy",
+    "deploy:cf:dry-run": "npm run build && wrangler deploy --dry-run"
   },
   "dependencies": {
     "@kaiserunix/oj-mcp-contracts": "0.1.0",
     "@kaiserunix/oj-mcp-server-common": "0.1.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "zod": "4.3.6"
+  },
+  "engines": {
+    "node": ">=22"
   },
   "license": "MIT"
 }

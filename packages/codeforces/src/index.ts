@@ -2,5 +2,5 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createCodeforcesMcpServer } from "./server.js";
 
-const server = createCodeforcesMcpServer();
+const server = createCodeforcesMcpServer({ transport: "local_stdio" });
 await server.connect(new StdioServerTransport());
