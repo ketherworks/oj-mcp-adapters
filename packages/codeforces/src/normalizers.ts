@@ -10,12 +10,16 @@ export interface NormalizeCodeforcesOptions {
 export function normalizeCodeforcesProblemset(payload: unknown, options: NormalizeCodeforcesOptions): OjProblemSummary[] {
   const response = payload as CodeforcesProblemsetResponse;
   const solvedByProblem = new Map(
-    response.result.problemStatistics.map((statistic) => [`${statistic.contestId}/${statistic.index}`, statistic.solvedCount])
+    response.result.problemStatistics.map((statistic) => [statisticsIdentity(statistic), statistic.solvedCount])
   );
 
   return response.result.problems.map((problem) => {
-    const nativeId = `${problem.contestId}/${problem.index}`;
-    const problemUrl = `https://codeforces.com/problemset/problem/${problem.contestId}/${problem.index}`;
+    const identity = problemIdentity(problem);
+    const nativeId = `${identity}/${problem.index}`;
+    const problemUrl =
+      problem.contestId !== undefined
+        ? `https://codeforces.com/problemset/problem/${problem.contestId}/${problem.index}`
+        : `https://codeforces.com/problemsets/${encodeURIComponent(problem.problemsetName!)}`;
     const source: OjSourceRef = {
       kind: "official_api",
       adapterId: "codeforces-official-api",
@@ -33,16 +37,28 @@ export function normalizeCodeforcesProblemset(payload: unknown, options: Normali
         nativeId,
         canonicalId: `codeforces:${nativeId}`,
         url: problemUrl,
-        contest: { nativeId: String(problem.contestId), index: problem.index },
+        contest: { nativeId: identity, index: problem.index },
         source
       },
       title: problem.name,
       difficulty: problem.rating === undefined ? undefined : { scale: "codeforces-rating", value: problem.rating },
       tags: problem.tags.map((tag) => ({ namespace: "platform", slug: slug(tag), name: tag })),
-      acceptance: { accepted: solvedByProblem.get(nativeId) },
+      acceptance: { accepted: solvedByProblem.get(statisticsLookupIdentity(problem)) },
       source
     });
   });
+}
+
+function problemIdentity(problem: CodeforcesProblemsetResponse["result"]["problems"][number]): string {
+  return problem.contestId === undefined ? problem.problemsetName! : String(problem.contestId);
+}
+
+function statisticsIdentity(statistic: CodeforcesProblemsetResponse["result"]["problemStatistics"][number]): string {
+  return statistic.contestId === undefined ? statistic.index : `${statistic.contestId}/${statistic.index}`;
+}
+
+function statisticsLookupIdentity(problem: CodeforcesProblemsetResponse["result"]["problems"][number]): string {
+  return problem.contestId === undefined ? problem.index : `${problem.contestId}/${problem.index}`;
 }
 
 export function searchCodeforcesProblems(summaries: OjProblemSummary[], query: string, limit: number): OjProblemSummary[] {

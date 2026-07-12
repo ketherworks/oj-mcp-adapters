@@ -7,9 +7,11 @@
     "packages/*"
   ],
   "scripts": {
+    "clean": "tsc -b --clean",
     "build": "tsc -b",
+    "postbuild": "node packages/luogu/scripts/ensure-cli-mode.mjs",
     "test": "vitest run",
-    "check": "npm run build && npm test",
+    "check": "npm run clean && npm run build && npm test",
     "sync:contracts": "node scripts/sync-contracts.mjs"
   },
   "devDependencies": {

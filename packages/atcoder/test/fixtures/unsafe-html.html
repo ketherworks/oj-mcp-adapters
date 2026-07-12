@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <span class="h2">A - Sanitized</span>
+    <p>Time Limit: 1 sec / Memory Limit: 64 MiB</p>
+    <span class="lang-en">
+      <section>
+        <h3>Problem Statement</h3>
+        <p onclick="steal()">Keep <a href="javascript:steal()">this link text</a> and <img src="/img/task.png" onerror="steal()" alt="diagram">.</p>
+        <script>window.stolen = true;</script>
+        <iframe src="https://evil.example">hidden executable content</iframe>
+      </section>
+      <section><h3>Constraints</h3><ul><li>The value is an integer.</li></ul></section>
+      <section><h3>Input</h3><pre>X
+</pre></section>
+      <section><h3>Output</h3><p>Print <var>X</var>.</p></section>
+      <section><h3>Sample Input 1</h3><pre>1
+</pre></section>
+      <section><h3>Sample Output 1</h3><pre>1
+</pre></section>
+    </span>
+  </body>
+</html>

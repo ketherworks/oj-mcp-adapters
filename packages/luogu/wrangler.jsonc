@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json.schemastore.org/wrangler",
+  "name": "oj-mcp-luogu",
+  "main": "dist/worker.js",
+  "compatibility_date": "2026-07-11",
+  "observability": {
+    "enabled": true
+  }
+}

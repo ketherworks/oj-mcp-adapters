@@ -24,4 +24,23 @@ describe("CodeforcesRateLimiter", () => {
     expect(startedAt).toEqual([0, 2_000, 4_000]);
     expect(sleeps).toEqual([2_000, 2_000]);
   });
+
+  test("bounds its wait queue and removes a cancelled waiter", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const limiter = new CodeforcesRateLimiter({ intervalMs: 0, maxQueued: 1 });
+    const active = limiter.schedule(async () => gate);
+    const controller = new AbortController();
+    const queued = limiter.schedule(async () => undefined, controller.signal);
+
+    await expect(limiter.schedule(async () => undefined)).rejects.toMatchObject({ name: "CodeforcesQueueFullError" });
+    controller.abort();
+    await expect(queued).rejects.toMatchObject({ name: "AbortError" });
+    const replacement = limiter.schedule(async () => "replacement");
+    release();
+    await expect(replacement).resolves.toBe("replacement");
+    await active;
+  });
 });

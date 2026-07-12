@@ -31,4 +31,34 @@ describe("Codeforces normalizers", () => {
     expect(searchCodeforcesProblems(summaries, "water", 10)[0].title).toBe("Watermelon");
     expect(searchCodeforcesProblems(summaries, "strings", 10)[0].ref.nativeId).toBe("71/A");
   });
+
+  test("normalizes a stable problemsetName/index identity when contestId is absent", () => {
+    const summaries = normalizeCodeforcesProblemset(
+      {
+        status: "OK",
+        result: {
+          problems: [
+            {
+              problemsetName: "acmsguru",
+              index: "100",
+              name: "A+B",
+              type: "PROGRAMMING",
+              tags: []
+            }
+          ],
+          problemStatistics: [{ index: "100", solvedCount: 99 }]
+        }
+      },
+      { fetchedAt: "2026-07-10T12:00:00.000Z", adapterVersion: "0.1.0" }
+    );
+
+    expect(summaries[0]).toMatchObject({
+      ref: {
+        nativeId: "acmsguru/100",
+        canonicalId: "codeforces:acmsguru/100",
+        contest: { nativeId: "acmsguru", index: "100" }
+      },
+      acceptance: { accepted: 99 }
+    });
+  });
 });

@@ -1,0 +1,22 @@
+{
+  "data": {
+    "problem": {
+      "pid": "P1305",
+      "name": "新二叉树",
+      "difficulty": 2,
+      "tags": [72, "tree"],
+      "content": {
+        "name": "新二叉树",
+        "background": "给定一棵用三元组描述的二叉树。",
+        "description": "请输出这棵二叉树的先序遍历结果。",
+        "formatI": "输入若干行父节点与左右孩子。",
+        "formatO": "输出一行先序遍历字符串。",
+        "hint": "空孩子使用星号表示。"
+      },
+      "samples": [
+        ["abc\n", "abc\n"],
+        { "input": "a**\n", "output": "a\n" }
+      ]
+    }
+  }
+}
