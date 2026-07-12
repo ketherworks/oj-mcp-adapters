@@ -208,6 +208,7 @@ async function readJsonBounded(response: Response, maxBytes: number, signal: Abo
     while (true) {
       throwIfCancelled(signal);
       const chunk = await reader.read();
+      throwIfCancelled(signal);
       if (chunk.done) break;
       bytes += chunk.value.byteLength;
       if (bytes > maxBytes) {

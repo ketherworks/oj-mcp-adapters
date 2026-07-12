@@ -302,6 +302,31 @@ describe("CodeforcesUpstreamCoordinator", () => {
     expect(body.locked).toBe(false);
   });
 
+  test("preserves timeout health when a post-header body read is cancelled", async () => {
+    const storage = new MemoryStorage();
+    let cancelStarted = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => undefined);
+      },
+      cancel() {
+        cancelStarted = true;
+        return new Promise<void>(() => undefined);
+      }
+    });
+    const coordinator = new CodeforcesUpstreamCoordinator({
+      storage,
+      fetchImpl: async () => new Response(body),
+      intervalMs: 0,
+      timeoutMs: 20
+    });
+
+    await expect(settleWithin(coordinator.fetchProblemset(), 100)).rejects.toMatchObject({ code: "network.timeout" });
+    await expect(coordinator.getLastHealth()).resolves.toMatchObject({ code: "network.timeout" });
+    expect(cancelStarted).toBe(true);
+    expect(body.locked).toBe(false);
+  });
+
   test("rolls back attempted generation chunks when chunk or metadata publication fails", async () => {
     for (const failedKey of ["problemset-response-chunk/v2/", "problemset-response/v2"]) {
       const storage = new MemoryStorage();

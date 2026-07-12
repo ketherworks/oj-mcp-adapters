@@ -329,6 +329,7 @@ async function readResponseTextBounded(response: Response, maxBytes: number, sig
     while (true) {
       throwIfAborted(signal);
       const chunk = await reader.read();
+      throwIfAborted(signal);
       if (chunk.done) break;
       bytes += chunk.value.byteLength;
       if (bytes > maxBytes) {

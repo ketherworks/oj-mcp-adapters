@@ -232,6 +232,28 @@ describe("CodeforcesApiClient", () => {
     expect(body.locked).toBe(false);
   });
 
+  test("preserves timeout classification when a post-header body read is cancelled", async () => {
+    let cancelStarted = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull() {
+        return new Promise<void>(() => undefined);
+      },
+      cancel() {
+        cancelStarted = true;
+        return new Promise<void>(() => undefined);
+      }
+    });
+    const client = new CodeforcesApiClient({
+      fetchImpl: async () => new Response(body),
+      limiter: immediateLimiter(),
+      timeoutMs: 20
+    });
+
+    await expect(settleWithin(client.getProblemset(), 100)).rejects.toMatchObject({ code: "network.timeout" });
+    expect(cancelStarted).toBe(true);
+    expect(body.locked).toBe(false);
+  });
+
   test("distinguishes real timeouts from other upstream fetch failures", async () => {
     const unavailable = new CodeforcesApiClient({
       fetchImpl: async () => {
