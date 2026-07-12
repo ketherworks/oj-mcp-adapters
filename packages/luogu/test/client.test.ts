@@ -151,6 +151,51 @@ describe("LuoguPageClient fixtures", () => {
     expect(cancelled).toBe(true);
   });
 
+  test("does not wait for declared-size response cancellation that never settles", async () => {
+    let cancelStarted = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelStarted = true;
+        return new Promise<void>(() => undefined);
+      }
+    });
+    const client = new LuoguPageClient({
+      fetchImpl: async () =>
+        new Response(body, {
+          headers: { "content-type": "application/json", "content-length": "1000" }
+        }),
+      maxResponseBytes: 12
+    });
+
+    await expect(settleWithin(client.searchProblems({ query: "tree", page: 1 }), 100)).rejects.toMatchObject({
+      code: "upstream.schema_changed"
+    });
+    expect(cancelStarted).toBe(true);
+  });
+
+  test("does not wait for streamed response cancellation that never settles", async () => {
+    let cancelStarted = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("1234567890123"));
+      },
+      cancel() {
+        cancelStarted = true;
+        return new Promise<void>(() => undefined);
+      }
+    });
+    const client = new LuoguPageClient({
+      fetchImpl: async () => new Response(body, { headers: { "content-type": "application/json" } }),
+      maxResponseBytes: 12
+    });
+
+    await expect(settleWithin(client.searchProblems({ query: "tree", page: 1 }), 100)).rejects.toMatchObject({
+      code: "upstream.schema_changed"
+    });
+    expect(cancelStarted).toBe(true);
+    expect(body.locked).toBe(false);
+  });
+
   test("maps rate limits without automatically replaying page requests", async () => {
     let attempts = 0;
     const client = new LuoguPageClient({
@@ -232,4 +277,18 @@ describe("LuoguPageClient fixtures", () => {
 
 function jsonResponse(payload: unknown): Response {
   return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Promise did not settle within ${timeoutMs}ms.`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

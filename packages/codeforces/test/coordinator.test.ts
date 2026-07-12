@@ -243,6 +243,65 @@ describe("CodeforcesUpstreamCoordinator", () => {
     }
   });
 
+  test("releases Durable Object admission when response cancellation never settles", async () => {
+    let calls = 0;
+    let cancelStarted = false;
+    const coordinator = new CodeforcesUpstreamCoordinator({
+      storage: new MemoryStorage(),
+      fetchImpl: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              cancel() {
+                cancelStarted = true;
+                return new Promise<void>(() => undefined);
+              }
+            }),
+            { status: 429 }
+          );
+        }
+        return new Response(problemsetBody("after-cancel"));
+      },
+      intervalMs: 0,
+      cacheTtlMs: 0,
+      maxQueued: 0
+    });
+
+    const limited = await settleWithin(coordinator.fetchProblemset(), 100);
+    const admitted = await settleWithin(coordinator.fetchProblemset(), 100);
+
+    expect(limited.status).toBe(429);
+    expect(admitted.status).toBe(200);
+    expect(cancelStarted).toBe(true);
+  });
+
+  test("releases coordinator reader locks when bounded cancellation never settles", async () => {
+    let cancelStarted = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(13));
+      },
+      cancel() {
+        cancelStarted = true;
+        return new Promise<void>(() => undefined);
+      }
+    });
+    const coordinator = new CodeforcesUpstreamCoordinator({
+      storage: new MemoryStorage(),
+      fetchImpl: async () => new Response(body),
+      intervalMs: 0,
+      maxResponseBytes: 12,
+      maxQueued: 0
+    });
+
+    await expect(settleWithin(coordinator.fetchProblemset(), 100)).rejects.toMatchObject({
+      code: "upstream.schema_changed"
+    });
+    expect(cancelStarted).toBe(true);
+    expect(body.locked).toBe(false);
+  });
+
   test("rolls back attempted generation chunks when chunk or metadata publication fails", async () => {
     for (const failedKey of ["problemset-response-chunk/v2/", "problemset-response/v2"]) {
       const storage = new MemoryStorage();
@@ -316,4 +375,18 @@ function problemsetBody(name: string): string {
       problemStatistics: [{ contestId: 1, index: "A", solvedCount: 1 }]
     }
   });
+}
+
+async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Promise did not settle within ${timeoutMs}ms.`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

@@ -148,7 +148,7 @@ export class LuoguPageClient implements LuoguPageReader {
       assertLuoguSource(responseUrl);
       const declaredLength = parseContentLength(response.headers.get("content-length"));
       if (declaredLength !== undefined && declaredLength > this.maxResponseBytes) {
-        await cancelResponseBody(response);
+        cancelResponseBody(response);
         throw new LuoguAdapterError("upstream.schema_changed", `${label} exceeded the ${this.maxResponseBytes}-byte response bound.`, {
           httpStatus: response.status
         });
@@ -253,7 +253,7 @@ async function readBoundedBody(
       }
       receivedBytes += value.byteLength;
       if (receivedBytes > maxBytes) {
-        await cancelReader(reader);
+        cancelReader(reader);
         throw new LuoguAdapterError("upstream.schema_changed", `${label} exceeded the ${maxBytes}-byte response bound.`, {
           httpStatus: response.status
         });
@@ -266,7 +266,7 @@ async function readBoundedBody(
     if (caught instanceof LuoguAdapterError || caught instanceof LuoguRequestCancelledError) {
       throw caught;
     }
-    await cancelReader(reader);
+    cancelReader(reader);
     if (abortSource() === "external") {
       throw new LuoguRequestCancelledError(`${label} was cancelled by the caller.`, { cause: caught });
     }
@@ -281,12 +281,9 @@ async function readBoundedBody(
   }
 }
 
-async function cancelResponseBody(response: Response): Promise<void> {
-  try {
-    await response.body?.cancel();
-  } catch {
-    // The response-size error remains authoritative when cancellation itself fails.
-  }
+function cancelResponseBody(response: Response): void {
+  if (!response.body || response.body.locked) return;
+  cancelBestEffort(() => response.body!.cancel());
 }
 
 function linkedAbortSignal(externalSignal: AbortSignal | undefined, timeoutMs: number): {
@@ -323,11 +320,17 @@ function linkedAbortSignal(externalSignal: AbortSignal | undefined, timeoutMs: n
   };
 }
 
-async function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>, reason?: unknown): Promise<void> {
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>, reason?: unknown): void {
+  cancelBestEffort(() => reader.cancel(reason));
+}
+
+function cancelBestEffort(cancel: () => Promise<void>): void {
   try {
-    await reader.cancel(reason);
+    void cancel().catch(() => {
+      // Preserve the bounded-read error if cleanup rejects.
+    });
   } catch {
-    // Preserve the bounded-read error if an already-failed stream rejects cancellation.
+    // Preserve the bounded-read error if cleanup throws synchronously.
   }
 }
 

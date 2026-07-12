@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { CodeforcesApiClient, CodeforcesApiError } from "../src/client.js";
-import type { CodeforcesRateLimiter } from "../src/rateLimiter.js";
+import { CodeforcesRateLimiter } from "../src/rateLimiter.js";
 import { loadFixture } from "./fixtureLoader.js";
 
 describe("CodeforcesApiClient", () => {
@@ -183,6 +183,55 @@ describe("CodeforcesApiClient", () => {
     expect(cancelled).toBe(true);
   });
 
+  test("releases rate-limiter admission when error-body cancellation never settles", async () => {
+    let calls = 0;
+    let cancelStarted = false;
+    const client = new CodeforcesApiClient({
+      fetchImpl: async () => {
+        calls += 1;
+        if (calls === 1) {
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              cancel() {
+                cancelStarted = true;
+                return new Promise<void>(() => undefined);
+              }
+            }),
+            { status: 429 }
+          );
+        }
+        return new Response(JSON.stringify({ status: "OK", result: { problems: [], problemStatistics: [] } }));
+      },
+      limiter: new CodeforcesRateLimiter({ intervalMs: 0, maxQueued: 0 })
+    });
+
+    await expect(settleWithin(client.getProblemset(), 100)).rejects.toMatchObject({ code: "rate_limited" });
+    await expect(settleWithin(client.getProblemset(), 100)).resolves.toMatchObject({ status: "OK" });
+    expect(cancelStarted).toBe(true);
+  });
+
+  test("releases reader locks when bounded response cancellation never settles", async () => {
+    let cancelStarted = false;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(13));
+      },
+      cancel() {
+        cancelStarted = true;
+        return new Promise<void>(() => undefined);
+      }
+    });
+    const client = new CodeforcesApiClient({
+      fetchImpl: async () => new Response(body),
+      limiter: immediateLimiter(),
+      maxResponseBytes: 12
+    });
+
+    await expect(settleWithin(client.getProblemset(), 100)).rejects.toMatchObject({ code: "upstream.schema_changed" });
+    expect(cancelStarted).toBe(true);
+    expect(body.locked).toBe(false);
+  });
+
   test("distinguishes real timeouts from other upstream fetch failures", async () => {
     const unavailable = new CodeforcesApiClient({
       fetchImpl: async () => {
@@ -204,4 +253,18 @@ describe("CodeforcesApiClient", () => {
 
 function immediateLimiter(): CodeforcesRateLimiter {
   return { schedule: (operation) => operation() } as CodeforcesRateLimiter;
+}
+
+async function settleWithin<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Promise did not settle within ${timeoutMs}ms.`)), timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

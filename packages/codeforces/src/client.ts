@@ -112,11 +112,11 @@ export class CodeforcesApiClient {
       }
 
       if (response.status === 429) {
-        await cancelResponseBody(response);
+        cancelResponseBody(response);
         throw new CodeforcesApiError("rate_limited", "Codeforces API rate limit exceeded.", retryAfterMilliseconds(response));
       }
       if (!response.ok) {
-        await cancelResponseBody(response);
+        cancelResponseBody(response);
         throw new CodeforcesApiError(
           response.status === 504 ? "network.timeout" : "upstream.unavailable",
           `Codeforces API returned HTTP ${response.status}.`
@@ -194,7 +194,7 @@ function isTimeoutError(error: unknown): boolean {
 async function readJsonBounded(response: Response, maxBytes: number, signal: AbortSignal): Promise<unknown> {
   const declared = response.headers.get("content-length");
   if (declared && /^\d+$/.test(declared) && BigInt(declared) > BigInt(maxBytes)) {
-    await cancelResponseBody(response);
+    cancelResponseBody(response);
     throw new RangeError("Codeforces response exceeded the configured byte limit.");
   }
   const reader = response.body?.getReader();
@@ -202,33 +202,46 @@ async function readJsonBounded(response: Response, maxBytes: number, signal: Abo
   const decoder = new TextDecoder();
   let bytes = 0;
   let text = "";
-  while (true) {
-    throwIfCancelled(signal);
-    const chunk = await reader.read();
-    if (chunk.done) break;
-    bytes += chunk.value.byteLength;
-    if (bytes > maxBytes) {
-      await cancelReader(reader);
-      throw new RangeError("Codeforces response exceeded the configured byte limit.");
+  const onAbort = () => cancelReader(reader);
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    while (true) {
+      throwIfCancelled(signal);
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > maxBytes) {
+        cancelReader(reader);
+        throw new RangeError("Codeforces response exceeded the configured byte limit.");
+      }
+      text += decoder.decode(chunk.value, { stream: true });
     }
-    text += decoder.decode(chunk.value, { stream: true });
+    return JSON.parse(text + decoder.decode()) as unknown;
+  } catch (error) {
+    cancelReader(reader);
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    reader.releaseLock();
   }
-  return JSON.parse(text + decoder.decode()) as unknown;
 }
 
-async function cancelResponseBody(response: Response): Promise<void> {
+function cancelResponseBody(response: Response): void {
+  if (!response.body || response.body.locked) return;
+  cancelBestEffort(() => response.body!.cancel());
+}
+
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  cancelBestEffort(() => reader.cancel());
+}
+
+function cancelBestEffort(cancel: () => Promise<void>): void {
   try {
-    await response.body?.cancel();
+    void cancel().catch(() => {
+      // Cleanup must not replace the upstream classification.
+    });
   } catch {
     // Cleanup must not replace the upstream classification.
-  }
-}
-
-async function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
-  try {
-    await reader.cancel();
-  } catch {
-    // Cleanup must not replace the bounded-read error.
   }
 }
 

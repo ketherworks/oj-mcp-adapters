@@ -151,13 +151,13 @@ export class CodeforcesUpstreamCoordinator {
     if (response.status === 429) {
       const retryAfterMs = retryAfterMilliseconds(response);
       const returned = bodylessResponse(response);
-      await cancelResponseBody(response);
+      cancelResponseBody(response);
       await this.recordHealth("rate_limited", startedAt, retryAfterMs);
       return returned;
     }
     if (!response.ok) {
       const returned = bodylessResponse(response);
-      await cancelResponseBody(response);
+      cancelResponseBody(response);
       await this.recordHealth(response.status === 504 ? "network.timeout" : "upstream.unavailable", startedAt);
       return returned;
     }
@@ -323,18 +323,28 @@ async function readResponseTextBounded(response: Response, maxBytes: number, sig
   const decoder = new TextDecoder();
   let bytes = 0;
   let text = "";
-  while (true) {
-    throwIfAborted(signal);
-    const chunk = await reader.read();
-    if (chunk.done) break;
-    bytes += chunk.value.byteLength;
-    if (bytes > maxBytes) {
-      await cancelReader(reader);
-      throw new RangeError("Codeforces response exceeded the coordinator byte limit.");
+  const onAbort = () => cancelReader(reader);
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    while (true) {
+      throwIfAborted(signal);
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > maxBytes) {
+        cancelReader(reader);
+        throw new RangeError("Codeforces response exceeded the coordinator byte limit.");
+      }
+      text += decoder.decode(chunk.value, { stream: true });
     }
-    text += decoder.decode(chunk.value, { stream: true });
+    return text + decoder.decode();
+  } catch (error) {
+    cancelReader(reader);
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    reader.releaseLock();
   }
-  return text + decoder.decode();
 }
 
 function chunkString(body: string, size: number): string[] {
@@ -378,19 +388,22 @@ function isTimeoutError(error: unknown): boolean {
   );
 }
 
-async function cancelResponseBody(response: Response): Promise<void> {
-  try {
-    await response.body?.cancel();
-  } catch {
-    // Cleanup must not replace the upstream classification.
-  }
+function cancelResponseBody(response: Response): void {
+  if (!response.body || response.body.locked) return;
+  cancelBestEffort(() => response.body!.cancel());
 }
 
-async function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  cancelBestEffort(() => reader.cancel());
+}
+
+function cancelBestEffort(cancel: () => Promise<void>): void {
   try {
-    await reader.cancel();
+    void cancel().catch(() => {
+      // Cleanup must not replace the upstream classification.
+    });
   } catch {
-    // Cleanup must not replace the bounded-read error.
+    // Cleanup must not replace the upstream classification.
   }
 }
 
