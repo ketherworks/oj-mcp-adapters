@@ -9,8 +9,8 @@ const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const sourceRepository = "https://github.com/ketherworks/oj-mcp-adapters";
 const excludedNames = new Set(["dist", "node_modules", ".wrangler", "coverage"]);
 const execFileAsync = promisify(execFile);
-const checkoutAction = "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5";
-const setupNodeAction = "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020";
+const checkoutAction = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0";
+const setupNodeAction = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
 const platforms = {
   atcoder: {
     displayName: "AtCoder Read-Only MCP Server",
@@ -419,8 +419,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: ${checkoutAction} # v4
-      - uses: ${setupNodeAction} # v4
+      - uses: ${checkoutAction} # v7
+      - uses: ${setupNodeAction} # v7
         with:
           node-version: 22.23.1
           cache: npm
@@ -447,8 +447,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: ${checkoutAction} # v4
-      - uses: ${setupNodeAction} # v4
+      - uses: ${checkoutAction} # v7
+      - uses: ${setupNodeAction} # v7
         with:
           node-version: 22.23.1
           cache: npm
