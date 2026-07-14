@@ -106,6 +106,7 @@ export interface OjImportWindow {
   windowId: string;
   expiresAt: string;
   state: "waiting" | "received" | "expired" | "cancelled";
+  endpoint?: string;
 }
 
 export interface OjImportPreview {

@@ -58,14 +58,20 @@ with or endorsed by AtCoder Inc. Problem content remains subject to the
     packageName: "@ketherworks/nowcoder-oj-mcp",
     mcpName: "io.github.ketherworks/nowcoder-oj-mcp",
     binaryName: "nowcoder-mcp-server",
-    description: "Hardened local MCP server for allowlisted NowCoder ACM problem pages.",
-    tools: ["oj_capabilities", "oj_health", "oj_fetch_problem", "nowcoder_auth_status"],
+    description: "Local NowCoder ACM MCP server for search, import, profiles, runs, submissions, and judging.",
+    tools: [
+      "oj_capabilities", "oj_health", "oj_search_problems", "oj_fetch_problem",
+      "oj_open_import_window", "oj_complete_import", "oj_fetch_profile", "oj_list_submissions",
+      "oj_platform_run", "oj_prepare_submission", "oj_commit_submission", "oj_poll_submission",
+      "nowcoder_auth_status"
+    ],
     worker: false,
     acceptsSessionCookie: true,
+    supportsJudgeActions: true,
     localizedReadme: "README.zh-CN.md",
     policy: `This project is unofficial and is not affiliated with or endorsed by NowCoder.
-It supports an optional startup-injected local session, never bypasses anti-bot challenges, and
-intentionally remains local stdio only.`
+It runs locally over stdio, keeps judge credentials inside the process, and requires a fresh user
+confirmation for every real submission.`
   }
 };
 
@@ -118,12 +124,16 @@ export async function exportStandalone({ platform, outputDir, sourceCommit }) {
       "mcp",
       "model-context-protocol",
       "online-judge",
-      "read-only"
+      ...(config.supportsJudgeActions ? ["competitive-programming-tools"] : ["read-only"])
     ];
     await writeJson(providerManifestPath, providerManifest);
     await mkdir(join(destination, ".github", "workflows"), { recursive: true });
-    const releaseReadme = readme(platform, config, sourceCommit);
-    const implementationReadme = (await readFile(join(destination, "packages", platform, "README.md"), "utf8"))
+    const sourceProviderReadme = await readFile(join(destination, "packages", platform, "README.md"), "utf8");
+    const standaloneProviderReadme = platform === "nowcoder"
+      ? sourceProviderReadme.replaceAll("@kaiserunix/nowcoder-mcp-server", config.packageName)
+      : sourceProviderReadme;
+    const releaseReadme = platform === "nowcoder" ? standaloneProviderReadme : readme(platform, config, sourceCommit);
+    const implementationReadme = sourceProviderReadme
       .replace(/^# .+\r?\n/, "")
       .trim();
     const localizedReadme = config.localizedReadme
@@ -144,7 +154,9 @@ export async function exportStandalone({ platform, outputDir, sourceCommit }) {
       writeFile(join(destination, "README.md"), releaseReadme, "utf8"),
       writeFile(
         join(destination, "packages", platform, "README.md"),
-        `${releaseReadme}\n\n## Provider Implementation Details\n\n${implementationReadme}\n`,
+        platform === "nowcoder"
+          ? releaseReadme
+          : `${releaseReadme}\n\n## Provider Implementation Details\n\n${implementationReadme}\n`,
         "utf8"
       ),
       writeFile(join(destination, "PROVENANCE.md"), provenance(platform, sourceCommit), "utf8"),
@@ -375,6 +387,27 @@ reviewed in the canonical monorepo, then exported with the exact source commit r
 }
 
 function securityPolicy(config) {
+  if (config.supportsJudgeActions) {
+    return `# Security Policy
+
+Report vulnerabilities through the private GitHub Security Advisory form for
+\`ketherworks/${config.repositoryName}\`. Do not include judge cookies, account tokens, source code,
+or other secrets in a public issue.
+
+The server runs as a local stdio process. It reads the complete Cookie from
+\`NOWCODER_SESSION_COOKIE\` at startup and sends credentials only to the audited NowCoder hosts used
+for pages, short-lived judge tokens, execution, and status polling. Cookie, CSRF token, judge token,
+and source code never enter MCP logs, errors, capability output, or submission previews.
+
+Problem search, browser import, profile reads, and submission history are bounded and schema checked.
+Platform self-test confirms before uploading source. Real submission uses a two-minute immutable
+preview plus MCP form elicitation; one acceptance authorizes exactly one POST. Ambiguous submit
+timeouts return \`outcome_unknown\` and are never retried automatically.
+
+The server does not extract browser cookies or bypass anti-bot challenges. Keep it on local stdio;
+do not expose authenticated tools through a shared HTTP deployment.
+`;
+  }
   const credentialBoundary = config.acceptsSessionCookie
     ? `Its only credential-forwarding path is an optional Cookie read from
 \`NOWCODER_SESSION_COOKIE\` at local process startup and sent to an allowlisted

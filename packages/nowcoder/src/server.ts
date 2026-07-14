@@ -3,8 +3,20 @@ import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, typ
 import {
   ojCapabilitiesSchema,
   ojErrorSchema,
+  ojImportPreviewSchema,
+  ojImportWindowRequestSchema,
+  ojImportWindowSchema,
+  ojPrepareSubmissionRequestSchema,
   ojProblemDocumentSchema,
   ojProviderHealthSchema,
+  ojRunRequestSchema,
+  ojRunResultSchema,
+  ojSearchResultSchema,
+  ojSubmitCommitRequestSchema,
+  ojSubmitPreviewSchema,
+  ojSubmitResultSchema,
+  type OjSubmitPreview,
+  type OjRunRequest,
   type OjError,
   type OjErrorCode
 } from "@kaiserunix/oj-mcp-contracts";
@@ -12,13 +24,24 @@ import { toOjToolOutputSchema, toToolError, toToolResult } from "@kaiserunix/oj-
 import { z } from "zod";
 import { nowCoderAuthStatusSchema } from "./auth.js";
 import { NowCoderAdapterError } from "./errors.js";
-import { NowCoderProvider } from "./provider.js";
+import { nowCoderProfileSchema } from "./profile.js";
+import { NowCoderProvider, nowCoderProfileInputSchema, nowCoderSearchInputSchema, nowCoderSubmissionsInputSchema } from "./provider.js";
+import { nowCoderSubmissionListSchema } from "./submissions.js";
 import type { NowCoderProblemLocator } from "./url.js";
 
 export const NOWCODER_MCP_TOOL_NAMES = [
   "oj_capabilities",
   "oj_health",
   "oj_fetch_problem",
+  "oj_search_problems",
+  "oj_open_import_window",
+  "oj_complete_import",
+  "oj_fetch_profile",
+  "oj_list_submissions",
+  "oj_prepare_submission",
+  "oj_commit_submission",
+  "oj_poll_submission",
+  "oj_platform_run",
   "nowcoder_auth_status"
 ] as const;
 
@@ -33,12 +56,20 @@ const fetchProblemInputSchema = z.object({
   message: "Provide exactly one URL or nativeId."
 });
 const emptyInputSchema = z.object({}).strict();
+const completeImportInputSchema = z.object({
+  windowId: z.string().min(1).max(100)
+}).strict();
+const commitSubmissionInputSchema = ojSubmitCommitRequestSchema.omit({ confirmationProof: true }).strict();
+const pollSubmissionInputSchema = z.object({
+  requestId: z.string().min(1).max(200),
+  submissionOperationId: z.string().min(1).max(200)
+}).strict();
 
 const tools: Tool[] = [
   tool(
     "oj_capabilities",
     "NowCoder Provider Capabilities",
-    "Report the audited NowCoder page-adapter capability, optional local-session mode, and explicitly unsupported operations.",
+    "Report the active NowCoder tools, authentication mode, operation risk, and judge language IDs.",
     emptyInputSchema,
     ojCapabilitiesSchema,
     false
@@ -52,9 +83,86 @@ const tools: Tool[] = [
     false
   ),
   tool(
+    "oj_platform_run",
+    "Run on NowCoder",
+    "Show an MCP-native confirmation prompt, upload the immutable code artifact for one NowCoder sample, and return the platform result.",
+    ojRunRequestSchema,
+    ojRunResultSchema,
+    true,
+    "localAction"
+  ),
+  tool(
+    "oj_prepare_submission",
+    "Prepare NowCoder Submission",
+    "Validate the account, problem, language, and immutable code artifact, then return a two-minute submission preview without submitting.",
+    ojPrepareSubmissionRequestSchema,
+    ojSubmitPreviewSchema,
+    true,
+    "localAction"
+  ),
+  tool(
+    "oj_commit_submission",
+    "Submit to NowCoder",
+    "Show an MCP-native confirmation prompt and submit the exact prepared code to NowCoder once after the user accepts.",
+    commitSubmissionInputSchema,
+    ojSubmitResultSchema,
+    true,
+    "realSubmit"
+  ),
+  tool(
+    "oj_poll_submission",
+    "Poll NowCoder Submission",
+    "Poll a submission operation created by this local process without resubmitting code.",
+    pollSubmissionInputSchema,
+    ojSubmitResultSchema,
+    true
+  ),
+  tool(
+    "oj_list_submissions",
+    "List NowCoder Submissions",
+    "List compact server-rendered submission metadata for a public or signed-in NowCoder competition profile.",
+    nowCoderSubmissionsInputSchema,
+    nowCoderSubmissionListSchema,
+    true
+  ),
+  tool(
+    "oj_fetch_profile",
+    "Fetch NowCoder Profile",
+    "Return a compact NowCoder competition profile by account ID, or resolve the signed-in account from the local session.",
+    nowCoderProfileInputSchema,
+    nowCoderProfileSchema,
+    true
+  ),
+  tool(
+    "oj_open_import_window",
+    "Open Browser Import Window",
+    "Open a short-lived loopback receiver for one NowCoder problem sent by Competitive Companion.",
+    ojImportWindowRequestSchema,
+    ojImportWindowSchema,
+    false,
+    "localAction"
+  ),
+  tool(
+    "oj_complete_import",
+    "Complete Browser Import",
+    "Wait for the selected Competitive Companion window and return its typed NowCoder problem preview.",
+    completeImportInputSchema,
+    ojImportPreviewSchema,
+    false,
+    "localAction"
+  ),
+  tool(
+    "oj_search_problems",
+    "Search NowCoder Problems",
+    "Search the official NowCoder ACM problem catalog by keyword with bounded cursor pagination.",
+    nowCoderSearchInputSchema,
+    ojSearchResultSchema,
+    true
+  ),
+  tool(
     "oj_fetch_problem",
     "Fetch NowCoder Problem",
-    "Fetch and normalize one allowlisted official NowCoder ACM problem page. An optional startup-injected local session may be used; this is not an official API and never performs browser automation, execution, or submission.",
+    "Fetch and normalize one official NowCoder ACM problem page with statement, limits, samples, tags, provenance, and hashes.",
     fetchProblemInputSchema,
     ojProblemDocumentSchema,
     true
@@ -91,6 +199,40 @@ export function createNowCoderMcpServer(options: { provider?: NowCoderProvider }
           return provider.fetchProblem(parseInput(fetchProblemInputSchema, input, request.params.name) as NowCoderProblemLocator, {
             signal: extra.signal
           });
+        case "oj_search_problems":
+          return provider.search(parseInput(nowCoderSearchInputSchema, input, request.params.name), {
+            signal: extra.signal
+          });
+        case "oj_open_import_window":
+          return provider.openImportWindow(parseInput(ojImportWindowRequestSchema, input, request.params.name));
+        case "oj_complete_import":
+          return provider.completeImport(parseInput(completeImportInputSchema, input, request.params.name).windowId);
+        case "oj_fetch_profile":
+          return provider.fetchProfile(parseInput(nowCoderProfileInputSchema, input, request.params.name), {
+            signal: extra.signal
+          });
+        case "oj_list_submissions":
+          return provider.listSubmissions(parseInput(nowCoderSubmissionsInputSchema, input, request.params.name), {
+            signal: extra.signal
+          });
+        case "oj_prepare_submission":
+          return provider.prepareSubmission(parseInput(ojPrepareSubmissionRequestSchema, input, request.params.name), extra.signal);
+        case "oj_commit_submission": {
+          const parsed = parseInput(commitSubmissionInputSchema, input, request.params.name);
+          const preview = provider.getSubmissionPreview(parsed.intentId);
+          const authorized = await confirmRealSubmission(server, preview, extra.signal);
+          return provider.commitSubmission({
+            ...parsed,
+            confirmationProof: "mcp-form-elicitation"
+          }, authorized, extra.signal);
+        }
+        case "oj_poll_submission":
+          return provider.pollSubmission(parseInput(pollSubmissionInputSchema, input, request.params.name), extra.signal);
+        case "oj_platform_run": {
+          const parsed = parseInput(ojRunRequestSchema, input, request.params.name);
+          const authorized = await confirmPlatformRun(server, parsed, extra.signal);
+          return provider.platformRun(parsed, authorized, extra.signal);
+        }
         default:
           throw new NowCoderAdapterError("request.invalid", "Unknown NowCoder tool name.");
       }
@@ -106,7 +248,8 @@ function tool(
   description: string,
   inputSchema: z.ZodType,
   successSchema: z.ZodType,
-  openWorldHint: boolean
+  openWorldHint: boolean,
+  behavior: "read" | "localAction" | "realSubmit" = "read"
 ): Tool {
   return {
     name,
@@ -114,7 +257,11 @@ function tool(
     description,
     inputSchema: z.toJSONSchema(inputSchema) as Tool["inputSchema"],
     outputSchema: toOjToolOutputSchema(successSchema) as Tool["outputSchema"],
-    annotations: readAnnotations(openWorldHint)
+    annotations: behavior === "read"
+      ? readAnnotations(openWorldHint)
+      : behavior === "realSubmit"
+        ? realSubmitAnnotations(openWorldHint)
+        : localActionAnnotations(openWorldHint)
   };
 }
 
@@ -177,7 +324,7 @@ function toOjError(error: NowCoderAdapterError): OjError {
 
 function errorLayer(code: OjErrorCode): OjError["layer"] {
   if (code === "request.invalid" || code === "internal") return "broker";
-  if (code === "policy.blocked") return "policy";
+  if (code === "policy.blocked" || code.startsWith("confirmation.")) return "policy";
   if (code.startsWith("auth.") || code === "challenge.required") return "auth";
   if (code === "network.timeout") return "transport";
   return "upstream";
@@ -190,4 +337,86 @@ function readAnnotations(openWorldHint: boolean) {
     idempotentHint: true,
     openWorldHint
   } as const;
+}
+
+function localActionAnnotations(openWorldHint: boolean) {
+  return {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint
+  } as const;
+}
+
+function realSubmitAnnotations(openWorldHint: boolean) {
+  return {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: false,
+    openWorldHint
+  } as const;
+}
+
+async function confirmRealSubmission(
+  server: McpServer,
+  preview: OjSubmitPreview,
+  signal?: AbortSignal
+): Promise<boolean> {
+  try {
+    const result = await server.server.elicitInput({
+      mode: "form",
+      message: [
+        `确认提交到牛客：${preview.problem.nativeId}`,
+        `账号：${preview.account.displayName} (${preview.account.accountId})`,
+        `语言：${preview.languageKey} / ${preview.platformLanguageId}`,
+        `文件：${preview.fileLabel}`,
+        `代码：${preview.codeBytes} bytes / SHA-256 ${preview.codeSha256}`
+      ].join("\n"),
+      requestedSchema: {
+        type: "object",
+        properties: {
+          confirm: {
+            type: "boolean",
+            title: "确认真实提交",
+            description: "勾选后将立即向牛客提交一次。",
+            default: false
+          }
+        },
+        required: ["confirm"]
+      }
+    }, { signal });
+    return result.action === "accept" && result.content?.confirm === true;
+  } catch {
+    throw new NowCoderAdapterError("confirmation.required", "The MCP client must show and accept the real-submission confirmation form.");
+  }
+}
+
+async function confirmPlatformRun(server: McpServer, request: OjRunRequest, signal?: AbortSignal): Promise<boolean> {
+  try {
+    const result = await server.server.elicitInput({
+      mode: "form",
+      message: [
+        `确认上传源码到牛客自测：${request.problem.nativeId}`,
+        `语言：${request.code.languageKey} / ${request.code.platformLanguageId ?? "未指定"}`,
+        `文件：${request.code.fileName ?? "student-code"}`,
+        `代码：${request.code.bytes} bytes / SHA-256 ${request.code.sha256}`,
+        `样例：${request.sampleOrdinals?.[0] ?? 1}`
+      ].join("\n"),
+      requestedSchema: {
+        type: "object",
+        properties: {
+          confirm: {
+            type: "boolean",
+            title: "确认平台自测",
+            description: "勾选后将把这份源码上传到牛客并运行一次。",
+            default: false
+          }
+        },
+        required: ["confirm"]
+      }
+    }, { signal });
+    return result.action === "accept" && result.content?.confirm === true;
+  } catch {
+    throw new NowCoderAdapterError("confirmation.required", "The MCP client must show and accept the platform-run confirmation form.");
+  }
 }

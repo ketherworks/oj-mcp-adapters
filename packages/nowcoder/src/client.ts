@@ -5,6 +5,7 @@ import type { ClientRequest, IncomingHttpHeaders, IncomingMessage } from "node:h
 import type { SecureContextOptions } from "node:tls";
 import { MAX_RETRY_AFTER_MS, NowCoderAdapterError } from "./errors.js";
 import { isChallengeHtml } from "./parser.js";
+import { nowCoderSearchUrl } from "./search.js";
 import { parseNowCoderProblemUrl } from "./url.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -27,6 +28,9 @@ export interface NowCoderRequestLimits {
 export interface NowCoderRequestContext extends NowCoderRequestLimits {
   signal: AbortSignal;
   sessionCookie?: string;
+  method?: "GET" | "POST";
+  body?: string;
+  headers?: Readonly<Record<string, string>>;
 }
 
 export type NowCoderHttpRequester = (url: URL, context: NowCoderRequestContext) => Promise<NowCoderHttpResponse>;
@@ -44,6 +48,9 @@ export interface NowCoderPinnedSocketRequest {
   addresses: NowCoderResolvedAddress[];
   signal: AbortSignal;
   sessionCookie?: string;
+  method?: "GET" | "POST";
+  body?: string;
+  headers?: Readonly<Record<string, string>>;
 }
 
 export interface NowCoderPinnedSocketResponse {
@@ -91,6 +98,23 @@ export interface NowCoderProblemPageResponse {
   html: string;
   url: string;
   etag?: string;
+}
+
+export interface NowCoderProblemListPageResponse {
+  html: string;
+  url: string;
+}
+
+export interface NowCoderProfilePageResponse {
+  accountId: string;
+  html: string;
+  url: string;
+}
+
+export interface NowCoderSubmissionsPageResponse {
+  accountId: string;
+  html: string;
+  url: string;
 }
 
 export interface NowCoderSessionStatus {
@@ -145,7 +169,7 @@ export class NowCoderPageClient {
       if (!/^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType)) {
         throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder returned a non-HTML session status response.");
       }
-      if (/\bwindow\.isLogin\s*=\s*true\b/.test(response.body)) {
+      if (/\bwindow\.isLogin\s*=\s*true\b/.test(response.body) && authenticatedOwnerId(response.body) !== undefined) {
         return { configured: true, state: "authenticated" };
       }
       if (/\bwindow\.isLogin\s*=\s*false\b/.test(response.body)) {
@@ -160,6 +184,141 @@ export class NowCoderPageClient {
 
   hasSessionCookie(): boolean {
     return this.sessionCookie !== undefined;
+  }
+
+  async getProblemListPage(
+    input: { query: string; page: number; limit: number },
+    options: { signal?: AbortSignal } = {}
+  ): Promise<NowCoderProblemListPageResponse> {
+    const query = input.query.trim();
+    if (
+      query.length === 0
+      || query.length > 300
+      || !Number.isInteger(input.page)
+      || input.page < 1
+      || input.page > 10_000
+      || !Number.isInteger(input.limit)
+      || input.limit < 1
+      || input.limit > 50
+    ) {
+      throw new NowCoderAdapterError("request.invalid", "Use a 1-300 character query, page 1-10000, and limit 1-50.");
+    }
+    const url = new URL(nowCoderSearchUrl(query, input.page, input.limit));
+    const controller = new AbortController();
+    const cancelFromCaller = () => {
+      controller.abort(options.signal?.reason ?? new DOMException("NowCoder request cancelled.", "AbortError"));
+    };
+    if (options.signal?.aborted) cancelFromCaller();
+    else options.signal?.addEventListener("abort", cancelFromCaller, { once: true });
+    const deadline = setTimeout(() => {
+      controller.abort(new DOMException("NowCoder request deadline exceeded.", "TimeoutError"));
+    }, this.limits.timeoutMs);
+    try {
+      const response = await this.request(url, controller.signal, options.signal);
+      const responseStatus = validHttpStatus(response.status);
+      if (responseStatus === undefined) {
+        throw new NowCoderAdapterError("upstream.unavailable", "NowCoder returned an invalid HTTP status.");
+      }
+      if (Buffer.byteLength(response.body, "utf8") > this.limits.maxBytes) {
+        throw new NowCoderAdapterError("upstream.unavailable", "NowCoder response exceeded the adapter's safe size limit.");
+      }
+      if (isChallengeHtml(response.body)) {
+        throw new NowCoderAdapterError(
+          "challenge.required",
+          "NowCoder returned an anti-bot challenge. Complete it in a browser, then retry.",
+          { httpStatus: responseStatus }
+        );
+      }
+      this.assertSuccessfulResponse({ ...response, status: responseStatus });
+      const contentType = header(response.headers, "content-type") ?? "";
+      if (!/^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType)) {
+        throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder returned a non-HTML problem-search response.");
+      }
+      return { html: response.body, url: url.href };
+    } finally {
+      clearTimeout(deadline);
+      options.signal?.removeEventListener("abort", cancelFromCaller);
+    }
+  }
+
+  async getProfilePage(
+    accountId?: string,
+    options: { signal?: AbortSignal } = {}
+  ): Promise<NowCoderProfilePageResponse> {
+    if (accountId !== undefined && !/^[1-9]\d{0,11}$/.test(accountId)) {
+      throw new NowCoderAdapterError("request.invalid", "NowCoder profile accountId must be a positive numeric ID.");
+    }
+    if (accountId === undefined && this.sessionCookie === undefined) {
+      throw new NowCoderAdapterError("auth.required", "Configure a local NowCoder session or provide a public accountId.");
+    }
+
+    const controller = new AbortController();
+    const cancelFromCaller = () => {
+      controller.abort(options.signal?.reason ?? new DOMException("NowCoder request cancelled.", "AbortError"));
+    };
+    if (options.signal?.aborted) cancelFromCaller();
+    else options.signal?.addEventListener("abort", cancelFromCaller, { once: true });
+    const deadline = setTimeout(() => {
+      controller.abort(new DOMException("NowCoder request deadline exceeded.", "TimeoutError"));
+    }, this.limits.timeoutMs);
+    try {
+      let resolvedId = accountId;
+      if (resolvedId === undefined) {
+        const home = await this.request(new URL("https://ac.nowcoder.com/"), controller.signal, options.signal);
+        this.assertHtmlResponse(home, "profile discovery");
+        if (/\bwindow\.isLogin\s*=\s*false\b/.test(home.body)) {
+          throw new NowCoderAdapterError("auth.invalid", "The configured NowCoder session has expired.");
+        }
+        resolvedId = authenticatedOwnerId(home.body);
+        if (!resolvedId) {
+          throw new NowCoderAdapterError("auth.invalid", "The configured NowCoder session did not expose a competition profile.");
+        }
+      }
+      const url = new URL(`https://ac.nowcoder.com/acm/contest/profile/${resolvedId}`);
+      const page = await this.request(url, controller.signal, options.signal);
+      this.assertHtmlResponse(page, "profile");
+      return { accountId: resolvedId, html: page.body, url: url.href };
+    } finally {
+      clearTimeout(deadline);
+      options.signal?.removeEventListener("abort", cancelFromCaller);
+    }
+  }
+
+  async getSubmissionsPage(
+    input: { accountId?: string; page: number; limit: number; query?: string },
+    options: { signal?: AbortSignal } = {}
+  ): Promise<NowCoderSubmissionsPageResponse> {
+    if (
+      (input.accountId !== undefined && !/^[1-9]\d{0,11}$/.test(input.accountId))
+      || !Number.isInteger(input.page) || input.page < 1 || input.page > 10_000
+      || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > 50
+      || (input.query?.length ?? 0) > 100
+    ) {
+      throw new NowCoderAdapterError("request.invalid", "Use a valid accountId, page 1-10000, limit 1-50, and query up to 100 characters.");
+    }
+    const controller = new AbortController();
+    const cancelFromCaller = () => {
+      controller.abort(options.signal?.reason ?? new DOMException("NowCoder request cancelled.", "AbortError"));
+    };
+    if (options.signal?.aborted) cancelFromCaller();
+    else options.signal?.addEventListener("abort", cancelFromCaller, { once: true });
+    const deadline = setTimeout(() => controller.abort(new DOMException("NowCoder request deadline exceeded.", "TimeoutError")), this.limits.timeoutMs);
+    try {
+      const accountId = await this.resolveProfileAccountId(input.accountId, controller.signal, options.signal);
+      const url = new URL(`https://ac.nowcoder.com/acm/contest/profile/${accountId}/practice-coding`);
+      url.searchParams.set("pageSize", String(input.limit));
+      url.searchParams.set("search", input.query?.trim() ?? "");
+      url.searchParams.set("statusTypeFilter", "-1");
+      url.searchParams.set("languageCategoryFilter", "-1");
+      url.searchParams.set("orderType", "DESC");
+      url.searchParams.set("page", String(input.page));
+      const page = await this.request(url, controller.signal, options.signal);
+      this.assertHtmlResponse(page, "submission-history");
+      return { accountId, html: page.body, url: url.href };
+    } finally {
+      clearTimeout(deadline);
+      options.signal?.removeEventListener("abort", cancelFromCaller);
+    }
   }
 
   async getProblemPage(inputUrl: string, options: { signal?: AbortSignal } = {}): Promise<NowCoderProblemPageResponse> {
@@ -239,11 +398,75 @@ export class NowCoderPageClient {
     }
   }
 
-  private async request(url: URL, signal: AbortSignal, callerSignal?: AbortSignal): Promise<NowCoderHttpResponse> {
+  async obtainJudgeAccessToken(options: { signal?: AbortSignal } = {}): Promise<string> {
+    const csrf = this.cookieValue("csrf_token");
+    if (!csrf) throw new NowCoderAdapterError("auth.invalid", "The configured NowCoder session does not contain csrf_token.");
+    const url = new URL("https://gw-c.nowcoder.com/api/sparta/base-oauth/access-token");
+    url.searchParams.set("sceneType", "2");
+    url.searchParams.set("token", csrf);
+    url.searchParams.set("lang", "zh-CN");
+    const response = await this.jsonAction(url, { method: "GET" }, options);
+    const envelope = response as { success?: unknown; code?: unknown; data?: unknown };
+    const data = envelope.data as { accessToken?: unknown } | null;
+    if (envelope.success !== true || !data || typeof data.accessToken !== "string" || !data.accessToken.trim()) {
+      throw new NowCoderAdapterError("auth.invalid", "NowCoder did not issue a judge access token for the configured session.");
+    }
+    return data.accessToken.replace(/^Bearer\s+/i, "").trim();
+  }
+
+  async submitJudge(payload: Record<string, unknown>, options: { signal?: AbortSignal } = {}): Promise<Record<string, unknown>> {
+    const response = await this.jsonAction(
+      new URL("https://victorinox.nowcoder.com/api/service/judge/submit"),
+      { method: "POST", body: JSON.stringify(payload) },
+      options
+    );
+    return judgeEnvelopeData(response, "submission");
+  }
+
+  async getQuestionSupportLanguageIds(questionId: string, options: { signal?: AbortSignal } = {}): Promise<string[]> {
+    if (!/^[1-9]\d*$/.test(questionId)) throw new NowCoderAdapterError("request.invalid", "NowCoder questionId must be a positive integer.");
+    const url = new URL("https://questionbank.nowcoder.com/api/qmp/question/detail");
+    url.searchParams.set("id", questionId);
+    url.searchParams.set("version", "3");
+    url.searchParams.set("sceneType", "3001");
+    const response = await this.jsonAction(url, { method: "GET" }, options);
+    const envelope = response as { code?: unknown; data?: unknown };
+    const data = envelope.data as { codingInfo?: { supportLanguages?: unknown } } | undefined;
+    if (envelope.code !== 0 || !Array.isArray(data?.codingInfo?.supportLanguages)) {
+      throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder question metadata did not contain supported languages.");
+    }
+    const ids = data.codingInfo.supportLanguages
+      .map((entry) => entry && typeof entry === "object" ? (entry as { langId?: unknown }).langId : undefined)
+      .map((value) => typeof value === "number" || typeof value === "string" ? String(value) : "")
+      .filter((value) => /^[1-9]\d*$/.test(value));
+    if (ids.length === 0) throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder question metadata returned no supported languages.");
+    return [...new Set(ids)];
+  }
+
+  async pollJudge(context: Record<string, unknown>, options: { signal?: AbortSignal } = {}): Promise<Record<string, unknown>> {
+    const url = new URL("https://victorinox.nowcoder.com/api/service/judge/submit-status");
+    const blocked = new Set(["content", "selfInputData", "selfOutputData", "userInput", "expectedOutput", "userOutput", "stdout"]);
+    for (const [key, value] of Object.entries(context)) {
+      if (blocked.has(key) || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key)) continue;
+      if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") continue;
+      if (typeof value === "string" && value.length > 4_096) continue;
+      url.searchParams.set(key, String(value));
+    }
+    const response = await this.jsonAction(url, { method: "GET" }, options);
+    return judgeEnvelopeData(response, "status");
+  }
+
+  private async request(
+    url: URL,
+    signal: AbortSignal,
+    callerSignal?: AbortSignal,
+    init: { method?: "GET" | "POST"; body?: string; headers?: Readonly<Record<string, string>> } = {}
+  ): Promise<NowCoderHttpResponse> {
     try {
       return await abortable(this.requester(url, {
         ...this.limits,
         signal,
+        ...init,
         ...(this.sessionCookie === undefined ? {} : { sessionCookie: this.sessionCookie })
       }), signal);
     } catch (error) {
@@ -280,6 +503,116 @@ export class NowCoderPageClient {
       });
     }
   }
+
+  private async jsonAction(
+    url: URL,
+    init: { method: "GET" | "POST"; body?: string },
+    options: { signal?: AbortSignal }
+  ): Promise<unknown> {
+    if (this.sessionCookie === undefined) throw new NowCoderAdapterError("auth.required", "Configure a local NowCoder session for judge operations.");
+    const controller = new AbortController();
+    const cancelFromCaller = () => controller.abort(options.signal?.reason ?? new DOMException("NowCoder request cancelled.", "AbortError"));
+    if (options.signal?.aborted) cancelFromCaller();
+    else options.signal?.addEventListener("abort", cancelFromCaller, { once: true });
+    const deadline = setTimeout(() => controller.abort(new DOMException("NowCoder judge request deadline exceeded.", "TimeoutError")), this.limits.timeoutMs);
+    try {
+      const response = await this.request(url, controller.signal, options.signal, {
+        ...init,
+        headers: {
+          Accept: "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+          Origin: "https://ac.nowcoder.com",
+          Referer: "https://ac.nowcoder.com/",
+          ...(init.method === "POST" ? { "Content-Type": "application/json" } : {})
+        }
+      });
+      const responseStatus = validHttpStatus(response.status);
+      if (responseStatus === undefined) throw new NowCoderAdapterError("upstream.unavailable", "NowCoder judge service returned an invalid HTTP status.");
+      if (Buffer.byteLength(response.body, "utf8") > this.limits.maxBytes) throw new NowCoderAdapterError("upstream.unavailable", "NowCoder judge response exceeded the safe size limit.");
+      this.assertSuccessfulResponse({ ...response, status: responseStatus });
+      const contentType = header(response.headers, "content-type") ?? "";
+      if (!/^application\/json\b/i.test(contentType)) throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder judge service returned a non-JSON response.");
+      try {
+        return JSON.parse(response.body) as unknown;
+      } catch {
+        throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder judge service returned malformed JSON.");
+      }
+    } finally {
+      clearTimeout(deadline);
+      options.signal?.removeEventListener("abort", cancelFromCaller);
+    }
+  }
+
+  private cookieValue(name: string): string | undefined {
+    for (const part of this.sessionCookie?.split(";") ?? []) {
+      const separator = part.indexOf("=");
+      if (separator < 1 || part.slice(0, separator).trim() !== name) continue;
+      const value = part.slice(separator + 1).trim();
+      return value || undefined;
+    }
+    return undefined;
+  }
+
+  private assertHtmlResponse(response: NowCoderHttpResponse, label: string): void {
+    const responseStatus = validHttpStatus(response.status);
+    if (responseStatus === undefined) {
+      throw new NowCoderAdapterError("upstream.unavailable", "NowCoder returned an invalid HTTP status.");
+    }
+    if (Buffer.byteLength(response.body, "utf8") > this.limits.maxBytes) {
+      throw new NowCoderAdapterError("upstream.unavailable", "NowCoder response exceeded the adapter's safe size limit.");
+    }
+    if (isChallengeHtml(response.body)) {
+      throw new NowCoderAdapterError("challenge.required", "NowCoder returned an anti-bot challenge. Complete it in a browser, then retry.");
+    }
+    this.assertSuccessfulResponse({ ...response, status: responseStatus });
+    const contentType = header(response.headers, "content-type") ?? "";
+    if (!/^text\/html\b|^application\/xhtml\+xml\b/i.test(contentType)) {
+      throw new NowCoderAdapterError("upstream.schema_changed", `NowCoder returned a non-HTML ${label} response.`);
+    }
+  }
+
+  private async resolveProfileAccountId(
+    accountId: string | undefined,
+    signal: AbortSignal,
+    callerSignal?: AbortSignal
+  ): Promise<string> {
+    if (accountId !== undefined) return accountId;
+    if (this.sessionCookie === undefined) {
+      throw new NowCoderAdapterError("auth.required", "Configure a local NowCoder session or provide a public accountId.");
+    }
+    const home = await this.request(new URL("https://ac.nowcoder.com/"), signal, callerSignal);
+    this.assertHtmlResponse(home, "profile discovery");
+    if (/\bwindow\.isLogin\s*=\s*false\b/.test(home.body)) {
+      throw new NowCoderAdapterError("auth.invalid", "The configured NowCoder session has expired.");
+    }
+    const resolvedId = authenticatedOwnerId(home.body);
+    if (!resolvedId) {
+      throw new NowCoderAdapterError("auth.invalid", "The configured NowCoder session did not expose a competition profile.");
+    }
+    return resolvedId;
+  }
+}
+
+function authenticatedOwnerId(html: string): string | undefined {
+  return /\bwindow\.globalInfo\.ownerId\s*=\s*["']([1-9]\d{0,11})["']/.exec(html)?.[1]
+    ?? /\bownerId\s*:\s*["']([1-9]\d{0,11})["']/.exec(html)?.[1];
+}
+
+function judgeEnvelopeData(input: unknown, operation: string): Record<string, unknown> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new NowCoderAdapterError("upstream.schema_changed", `NowCoder ${operation} response was not an object.`);
+  }
+  const envelope = input as Record<string, unknown>;
+  if (envelope.code === 998 || envelope.code === 999) {
+    throw new NowCoderAdapterError("auth.invalid", "The configured NowCoder session is no longer valid.");
+  }
+  if (envelope.code !== 0 || !envelope.data || typeof envelope.data !== "object" || Array.isArray(envelope.data)) {
+    throw new NowCoderAdapterError(
+      operation === "submission" ? "submission.rejected" : "upstream.unavailable",
+      `NowCoder ${operation} request was rejected.`
+    );
+  }
+  return envelope.data as Record<string, unknown>;
 }
 
 export function isPublicIpAddress(address: string): boolean {
@@ -368,7 +701,10 @@ export async function requestValidatedPinnedHttps(
     serverName: url.hostname,
     addresses,
     signal: context.signal,
-    ...(context.sessionCookie === undefined ? {} : { sessionCookie: context.sessionCookie })
+    ...(context.sessionCookie === undefined ? {} : { sessionCookie: context.sessionCookie }),
+    ...(context.method === undefined ? {} : { method: context.method }),
+    ...(context.body === undefined ? {} : { body: context.body }),
+    ...(context.headers === undefined ? {} : { headers: context.headers })
   }), context.signal);
   const iterator = socket.body[Symbol.asyncIterator]();
   const chunks: Buffer[] = [];
@@ -418,7 +754,7 @@ export function createNodeHttpsSocketOpener(
       hostname: socketRequest.url.hostname,
       port: options.port ?? 443,
       path: `${socketRequest.url.pathname}${socketRequest.url.search}`,
-      method: "GET",
+      method: socketRequest.method ?? "GET",
       servername: socketRequest.serverName,
       rejectUnauthorized: true,
       lookup: pinnedLookup,
@@ -435,6 +771,8 @@ export function createNodeHttpsSocketOpener(
         "Accept-Language": "zh-CN,zh;q=0.9",
         Connection: "close",
         "User-Agent": "oj-mcp-nowcoder/0.2.0 (+local-page-adapter)",
+        ...(socketRequest.headers ?? {}),
+        ...(socketRequest.body === undefined ? {} : { "Content-Length": String(Buffer.byteLength(socketRequest.body, "utf8")) }),
         ...(socketRequest.sessionCookie === undefined ? {} : { Cookie: socketRequest.sessionCookie })
       }
     }, (response) => finish(() => {
@@ -452,6 +790,7 @@ export function createNodeHttpsSocketOpener(
       });
     }));
     request.on("error", (error) => finish(() => reject(error)));
+    if (socketRequest.body !== undefined) request.write(socketRequest.body);
     request.end();
   });
 }

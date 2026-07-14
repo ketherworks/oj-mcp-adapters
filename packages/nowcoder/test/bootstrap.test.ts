@@ -12,7 +12,7 @@ describe("NowCoder stdio bootstrap", () => {
           expect(context.sessionCookie).toBe("NOWCODER_SESSION=bootstrap-secret");
           return {
             status: 200,
-            body: "<script>window.isLogin = true;</script>",
+            body: '<script>window.isLogin = true; window.globalInfo = { ownerId: "123456789" };</script>',
             headers: { "content-type": "text/html" }
           };
         }

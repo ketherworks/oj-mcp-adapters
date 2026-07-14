@@ -157,7 +157,8 @@ export const ojImportWindowSchema = z
     schemaVersion: z.literal("oj.import-window/v1"),
     windowId: z.string().min(1),
     expiresAt: z.iso.datetime(),
-    state: z.enum(["waiting", "received", "expired", "cancelled"])
+    state: z.enum(["waiting", "received", "expired", "cancelled"]),
+    endpoint: z.url().optional()
   })
   .strict();
 

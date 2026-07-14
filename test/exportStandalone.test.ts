@@ -117,10 +117,15 @@ describe("standalone MCP source export", () => {
     expect(manifest.version).toBe("0.2.0");
     expect(readme).toContain("[简体中文](README.zh-CN.md)");
     expect(readme).toContain("`nowcoder_auth_status`");
+    expect(readme).toContain("`oj_commit_submission`");
+    expect(readme).toContain("## Quick Start");
     expect(readme).toContain("`NOWCODER_SESSION_COOKIE`");
-    expect(chineseReadme).toContain("## 本地登录态");
-    expect(security).toContain("must never enter tool arguments");
-    expect(security).toContain("remotely hosted transport");
+    expect(readme).toContain("--workspace @ketherworks/nowcoder-oj-mcp");
+    expect(readme).not.toContain("@kaiserunix/nowcoder-mcp-server");
+    expect(chineseReadme).toContain("## 快速开始");
+    expect(chineseReadme).toContain("## 提交流程");
+    expect(security).toContain("one acceptance authorizes exactly one POST");
+    expect(security).toContain("do not expose authenticated tools through a shared HTTP deployment");
   }, 120_000);
 
   test("rejects a syntactically valid commit that does not exist", async () => {

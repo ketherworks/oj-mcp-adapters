@@ -2,81 +2,113 @@
 
 [简体中文](README.zh-CN.md)
 
-Read-only MCP adapter for official NowCoder/牛客 ACM problem pages. It is an unofficial page adapter and does not use or claim an official NowCoder API.
+Bring NowCoder ACM problems and login-aware workflows directly into VS Code agents through a typed local MCP server.
+
+## Quick Start
+
+```bash
+git clone https://github.com/ketherworks/nowcoder-oj-mcp.git
+cd nowcoder-oj-mcp
+npm ci
+npm run build
+```
+
+Open **MCP: Open User Configuration** in VS Code and add:
+
+```json
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "nowcoder-cookie",
+      "description": "NowCoder Cookie request-header value",
+      "password": true
+    }
+  ],
+  "servers": {
+    "nowcoder": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["C:/path/to/nowcoder-oj-mcp/packages/nowcoder/dist/index.js"],
+      "env": {
+        "NOWCODER_SESSION_COOKIE": "${input:nowcoder-cookie}",
+        "COMPETITIVE_COMPANION_PORT": "10043"
+      }
+    }
+  }
+}
+```
+
+Start the server from **MCP: List Servers**. VS Code prompts for the Cookie once and stores the input securely. For public reads, remove the Cookie input and `NOWCODER_SESSION_COOKIE`; the browser-import port can stay.
+
+Try these prompts:
+
+```text
+Search NowCoder for "binary graph" and return the first 10 problems.
+Import NowCoder problem NC218144.
+Open a NowCoder browser-import window.
+Read my NowCoder competition profile and latest 20 submissions.
+Run the first sample for main.cpp on NowCoder.
+Prepare main.cpp for submission.
+```
+
+For browser import, install [Competitive Companion](https://github.com/jmerle/competitive-companion), set its custom port to `10043`, call `oj_open_import_window`, click the green plus on the problem page, then call `oj_complete_import`. The listener closes after one problem.
 
 ## Tools
 
-- `oj_capabilities`: reports the audited fetch capability, its active authentication mode, and every unsupported operation.
-- `oj_health`: reports passive health from the last fetch without making a network probe.
-- `oj_fetch_problem`: returns an `OjProblemDocument` from one allowlisted page URL or canonical native ID.
-- `nowcoder_auth_status`: checks whether the startup-injected local session is accepted without returning account identity or Cookie data.
+- `oj_capabilities`: discovers the active transport, authentication mode, operation risk, and language support.
+- `oj_health`: reports transport and parser health from real adapter activity.
+- `oj_fetch_problem`: converts an official problem page into a typed `OjProblemDocument` with statement, limits, samples, tags, provenance, and hashes.
+- `oj_search_problems`: searches the official ACM catalog by keyword with bounded cursor pagination.
+- `oj_open_import_window`: opens a one-shot Competitive Companion receiver on loopback for up to 60 seconds.
+- `oj_complete_import`: receives the browser task, samples, and limits as a typed import preview.
+- `oj_fetch_profile`: reads a compact competition profile by numeric ID, or resolves the signed-in account.
+- `oj_list_submissions`: pages through verdict, problem, language, time, memory, code length, and submission time without reading source code.
+- `oj_platform_run`: uploads an immutable code artifact after confirmation and runs one sample on NowCoder.
+- `oj_prepare_submission`: validates account, problem, language, file hash, and code size, then creates a two-minute preview without submitting.
+- `oj_commit_submission`: shows an MCP-native confirmation form, obtains a fresh short-lived token, and submits exactly once after acceptance.
+- `oj_poll_submission`: polls a submission created by this process and never resubmits it.
+- `nowcoder_auth_status`: validates the local session and returns a redacted login state.
 
-`oj_search_problems` is intentionally absent because no stable problem-search contract has been audited. Browser import, profiles, submissions, execution, and judging are also absent. Configuring a session does not enable those operations.
+## Submission Flow
 
-## Local Session
+1. Call `oj_prepare_submission` and inspect the platform, account, problem, language, file, byte count, and SHA-256.
+2. Call `oj_commit_submission`; VS Code displays the confirmation form.
+3. Accept to create one real submission, then call `oj_poll_submission` for the verdict.
 
-Authentication is optional. Without a session, the server reads pages that NowCoder exposes publicly. With a session, the same allowlisted page requests include the user-provided Cookie header and capabilities report `session_cookie` with `R1_private_read` risk.
+Declining or cancelling creates no submission. An ambiguous network timeout returns `outcome_unknown` and is never retried automatically.
 
-The server reads a complete Cookie request-header value from `NOWCODER_SESSION_COOKIE` once at process startup. A trusted launcher should obtain the value from a secret manager, such as VS Code `SecretStorage`, and inject it only into the local stdio child process.
+## Problem IDs
 
-Do not put the Cookie in MCP tool arguments, `mcp.json`, VS Code settings, command-line arguments, shell history, logs, issues, or committed files. This adapter does not extract browser cookies automatically. Restart the process after rotating the session.
-
-`nowcoder_auth_status` checks the fixed URL `https://ac.nowcoder.com/` and returns one redacted state:
-
-- `not_configured`
-- `authenticated`
-- `expired`
-- `challenge`
-- `unknown`
-
-The status result never contains the Cookie, account identity, or response HTML.
-
-## Accepted URLs
-
-Only HTTPS URLs on the exact host `ac.nowcoder.com` are accepted:
+Use a URL or one of the compact IDs below:
 
 ```text
-https://ac.nowcoder.com/acm/problem/<numeric-id>
-https://ac.nowcoder.com/acm/contest/<numeric-contest-id>/<problem-index>
+NC218144       -> https://ac.nowcoder.com/acm/problem/218144
+11244/A        -> https://ac.nowcoder.com/acm/contest/11244/A
 ```
 
-Query strings and fragments are discarded. Other NowCoder products and legacy URL shapes are rejected until independently audited.
+## Login
 
-The alternative `nativeId` input accepts exactly these deterministic forms:
+Sign in to NowCoder in a browser, inspect a request to `ac.nowcoder.com`, and use its complete `Cookie` request-header value when VS Code prompts. Restart the MCP server after rotating the session.
 
-```text
-NC<positive-numeric-id>                         -> /acm/problem/<id>
-<positive-numeric-contest-id>/<uppercase-index> -> /acm/contest/<contest-id>/<index>
-```
+The Cookie is read once at process startup, attached only to validated NowCoder destinations, and never returned through MCP output. Redirect targets are checked before a follow-up request receives authentication.
 
-Numeric contest indexes are also accepted. Bare numbers, leading zeroes, lowercase indexes, path segments, and requests containing both `url` and `nativeId` are rejected.
+## Security
 
-## Safety
-
-- URL scheme, hostname, port, credentials, and path are allowlisted before every request and redirect.
-- The optional Cookie is attached only after the destination passes the exact `ac.nowcoder.com` allowlist. A redirect is validated before any follow-up request can receive it.
-- DNS A and AAAA queries use a cancellation-capable Node resolver under the shared deadline. Every answer must be public unicast; validated addresses are pinned into TLS fallback while preserving hostname verification and SNI.
-- Redirects are manual and limited to two allowlisted hops.
-- One 10-second deadline covers DNS, response-body transfer, and every redirect hop. Responses are capped at 2 MiB of UTF-8 HTML; the startup Cookie is capped at 16 KiB and control characters are rejected.
-- Anti-bot pages produce `challenge.required`; the adapter does not use browser automation or attempt to bypass them.
-- Responses are normalized from the official ACM DOM with required input/output sections, source provenance, and SHA-256 hashes on text blocks. Missing required sections fail as `upstream.schema_changed`.
-- Tool inputs have no Cookie or credential field, and errors and status results are deliberately redacted.
-
-## Transport Choice
-
-The package exposes local stdio only. It must not be deployed as a shared HTTP service while session forwarding is enabled. Keeping authenticated requests local prevents the server from becoming a credential-forwarding or page-fetch relay and preserves the Node transport's DNS and TLS pinning controls.
+- Local stdio transport only.
+- Exact HTTPS host and path allowlists, public-IP DNS validation, and TLS address pinning.
+- Shared 10-second request deadline, 2 MiB response limit, 16 KiB Cookie limit, and bounded redirects.
+- Strict tool schemas with no Cookie field; redacted errors and authentication status.
+- Cookie, CSRF token, and short-lived judge token never enter tool output, logs, or submission previews.
+- Every real submission requires a fresh confirmation; platform self-test also confirms before uploading code.
+- Anti-bot challenges are surfaced as `challenge.required` for the user to complete in a browser.
 
 ## Development
 
-Node.js 22, TypeScript ESM/NodeNext, MCP SDK 1.29.0, and Zod 4.3.6 are required.
-
-```powershell
-npm run build
-npm run typecheck
-npm run typecheck:test
-npm test
-npm run pack:check
-npm start
+```bash
+npm run typecheck:test --workspace @kaiserunix/nowcoder-mcp-server
+npm test --workspace @kaiserunix/nowcoder-mcp-server
+npm run pack:check --workspace @kaiserunix/nowcoder-mcp-server
 ```
 
-Tests use synthetic sessions, static fixtures, and loopback-only TLS servers. They do not contact NowCoder, access browser secrets, or deploy any service.
+Tests use synthetic sessions, static fixtures, and loopback-only TLS servers.

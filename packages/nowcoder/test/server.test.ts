@@ -1,8 +1,12 @@
+import { createHash } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { describe, expect, test, vi } from "vitest";
 import { NowCoderPageClient } from "../src/client.js";
+import { CompetitiveCompanionImporter } from "../src/companion.js";
 import { NowCoderAdapterError } from "../src/errors.js";
+import { NowCoderJudgeService, type NowCoderJudgeGateway } from "../src/judge.js";
 import { NowCoderProvider } from "../src/provider.js";
 import { createNowCoderMcpServer, NOWCODER_MCP_TOOL_NAMES } from "../src/server.js";
 import { loadFixture } from "./fixtureLoader.js";
@@ -16,7 +20,7 @@ describe("NowCoder MCP server", () => {
         sessionCookie: "NOWCODER_SESSION=must-not-escape",
         requester: async () => ({
           status: 200,
-          body: "<script>window.isLogin = true;</script>",
+          body: '<script>window.isLogin = true; window.globalInfo = { ownerId: "123456789" };</script>',
           headers: { "content-type": "text/html" }
         })
       }),
@@ -40,12 +44,13 @@ describe("NowCoder MCP server", () => {
     await server.close();
   });
 
-  test("lists exactly the approved read-only tools and returns an OjProblemDocument", async () => {
+  test("lists the read tools and returns problem documents and search results", async () => {
     const html = await loadFixture("acm-problem.html");
+    const listHtml = await loadFixture("problem-list.html");
     const provider = new NowCoderProvider({
-      client: new NowCoderPageClient({ requester: async () => ({
+      client: new NowCoderPageClient({ requester: async (requestUrl) => ({
         status: 200,
-        body: html,
+        body: requestUrl.pathname.endsWith("/list") ? listHtml : html,
         headers: { "content-type": "text/html" }
       }) }),
       nowIso: () => "2026-07-11T01:02:03.000Z"
@@ -55,10 +60,23 @@ describe("NowCoder MCP server", () => {
     const listed = await client.listTools();
     const urlResult = await client.callTool({ name: "oj_fetch_problem", arguments: { url } });
     const nativeIdResult = await client.callTool({ name: "oj_fetch_problem", arguments: { nativeId: "NC218144" } });
+    const searchResult = await client.callTool({
+      name: "oj_search_problems",
+      arguments: {
+        schemaVersion: "oj.search-request/v1",
+        requestId: "search-server-1",
+        platform: "nowcoder",
+        query: "二分",
+        limit: 20
+      }
+    });
 
     expect(listed.tools.map((tool) => tool.name).sort()).toEqual([...NOWCODER_MCP_TOOL_NAMES].sort());
-    expect(listed.tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
-    expect(listed.tools.some((tool) => /search|run|submit|cookie|browser/i.test(tool.name))).toBe(false);
+    const actionTools = new Set(["oj_open_import_window", "oj_complete_import", "oj_prepare_submission", "oj_commit_submission", "oj_platform_run"]);
+    expect(listed.tools.filter((tool) => !actionTools.has(tool.name)).every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
+    expect(listed.tools.filter((tool) => actionTools.has(tool.name)).every((tool) => tool.annotations?.readOnlyHint === false)).toBe(true);
+    expect(listed.tools.find((tool) => tool.name === "oj_commit_submission")?.annotations?.destructiveHint).toBe(true);
+    expect(listed.tools.some((tool) => /cookie/i.test(tool.name))).toBe(false);
     expect(listed.tools.every((tool) => JSON.stringify(tool.outputSchema).includes("oj.error/v1"))).toBe(true);
     const fetchTool = listed.tools.find((tool) => tool.name === "oj_fetch_problem");
     expect(Object.keys((fetchTool?.inputSchema.properties ?? {}) as Record<string, unknown>).sort()).toEqual([
@@ -73,7 +91,224 @@ describe("NowCoder MCP server", () => {
       schemaVersion: "oj.problem-document/v1",
       ref: { platform: "nowcoder", nativeId: "NC218144" }
     });
+    expect("structuredContent" in searchResult && searchResult.structuredContent).toMatchObject({
+      schemaVersion: "oj.search-result/v1",
+      requestId: "search-server-1",
+      items: expect.any(Array)
+    });
 
+    await client.close();
+    await server.close();
+  });
+
+  test("opens and completes a Competitive Companion import through MCP", async () => {
+    const importer = new CompetitiveCompanionImporter({ port: 0, nowIso: () => "2026-07-14T15:30:00.000Z" });
+    const provider = new NowCoderProvider({ importer });
+    const { client, server } = await connect(provider);
+
+    const opened = await client.callTool({
+      name: "oj_open_import_window",
+      arguments: {
+        schemaVersion: "oj.import-window-request/v1",
+        requestId: "mcp-import-1",
+        allowedPlatforms: ["nowcoder"],
+        expiresInMs: 10_000
+      }
+    });
+    const window = opened.structuredContent as { windowId: string; endpoint: string };
+    const posted = await fetch(window.endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "浏览器导题",
+        group: "NowCoder",
+        url: "https://ac.nowcoder.com/acm/problem/286185",
+        interactive: false,
+        memoryLimit: 256,
+        timeLimit: 2_000,
+        tests: [{ input: "1\n", output: "2\n" }],
+        input: { type: "stdin" },
+        output: { type: "stdout" }
+      })
+    });
+    const completed = await client.callTool({
+      name: "oj_complete_import",
+      arguments: { windowId: window.windowId }
+    });
+
+    expect(posted.status).toBe(200);
+    expect(completed).toMatchObject({
+      structuredContent: {
+        schemaVersion: "oj.import-preview/v1",
+        windowId: window.windowId,
+        document: { title: "浏览器导题", ref: { nativeId: "NC286185" } }
+      }
+    });
+    await provider.dispose();
+    await client.close();
+    await server.close();
+  });
+
+  test("returns a compact public competition profile through MCP", async () => {
+    const html = await loadFixture("profile.html");
+    const provider = new NowCoderProvider({
+      client: new NowCoderPageClient({ requester: async () => ({
+        status: 200,
+        body: html,
+        headers: { "content-type": "text/html" }
+      }) }),
+      nowIso: () => "2026-07-14T16:00:00.000Z"
+    });
+    const { client, server } = await connect(provider);
+
+    const result = await client.callTool({
+      name: "oj_fetch_profile",
+      arguments: { accountId: "886965097" }
+    });
+
+    expect(result).toMatchObject({
+      structuredContent: {
+        schemaVersion: "nowcoder.profile/v1",
+        accountId: "886965097",
+        displayName: "HoMaMaOvO",
+        rating: 3979,
+        ratingRankLabel: "1"
+      }
+    });
+    await provider.dispose();
+    await client.close();
+    await server.close();
+  });
+
+  test("lists compact public submission metadata through MCP", async () => {
+    const html = await loadFixture("submissions.html");
+    const provider = new NowCoderProvider({
+      client: new NowCoderPageClient({ requester: async () => ({
+        status: 200,
+        body: html,
+        headers: { "content-type": "text/html" }
+      }) }),
+      nowIso: () => "2026-07-14T16:30:00.000Z"
+    });
+    const { client, server } = await connect(provider);
+
+    const result = await client.callTool({
+      name: "oj_list_submissions",
+      arguments: { accountId: "776966013", limit: 2 }
+    });
+
+    expect(result).toMatchObject({
+      structuredContent: {
+        schemaVersion: "nowcoder.submission-list/v1",
+        accountId: "776966013",
+        totalPages: 3,
+        items: [
+          { submissionId: "83132818", verdict: "accepted" },
+          { submissionId: "83132781", verdict: "wrong_answer" }
+        ]
+      }
+    });
+    await provider.dispose();
+    await client.close();
+    await server.close();
+  });
+
+  test("elicits an explicit confirmation before one real submission", async () => {
+    const source = "int main(){return 0;}\n";
+    const codeSha256 = createHash("sha256").update(source).digest("hex");
+    let submissions = 0;
+    const gateway: NowCoderJudgeGateway = {
+      prepareContext: async () => ({
+        accountId: "123456789",
+        displayName: "student",
+        questionId: "1338275",
+        samples: [{ ordinal: 1, input: "1 2\n", output: "3\n" }],
+        supportedLanguageIds: ["1", "2", "4", "11"]
+      }),
+      obtainAccessToken: async () => "short-token",
+      submit: async () => {
+        submissions += 1;
+        return { id: "90001", submissionId: "90001" };
+      },
+      poll: async () => ({ status: 5, submissionId: "90001" })
+    };
+    const judge = new NowCoderJudgeService({ gateway });
+    const provider = new NowCoderProvider({ judge });
+    const prompts: string[] = [];
+    const { client, server } = await connect(provider, async (message) => {
+      prompts.push(message);
+      return { action: "accept", content: { confirm: true } };
+    });
+    const sourceRef = {
+      kind: "page_adapter" as const,
+      adapterId: "nowcoder-public-page",
+      adapterVersion: "0.2.0",
+      fetchedAt: "2026-07-14T17:00:00.000Z",
+      sourceUrl: url,
+      confidence: "derived" as const
+    };
+    const prepared = await client.callTool({
+      name: "oj_prepare_submission",
+      arguments: {
+        schemaVersion: "oj.prepare-submission/v1",
+        requestId: "prepare-mcp-1",
+        attemptId: "attempt-mcp-1",
+        providerId: "nowcoder-public-page",
+        problem: {
+          schemaVersion: "oj.problem-ref/v1",
+          platform: "nowcoder",
+          nativeId: "NC218144",
+          canonicalId: "nowcoder:NC218144",
+          url,
+          source: sourceRef
+        },
+        accountId: "123456789",
+        languageKey: "cpp",
+        platformLanguageId: "2",
+        code: {
+          languageKey: "cpp",
+          platformLanguageId: "2",
+          source,
+          sha256: codeSha256,
+          bytes: Buffer.byteLength(source),
+          fileName: "main.cpp",
+          capturedAt: "2026-07-14T17:00:00.000Z",
+          sourceWasDirty: false
+        }
+      }
+    });
+    const preview = prepared.structuredContent as {
+      intentId: string;
+      submissionOperationId: string;
+      codeArtifactId: string;
+      codeSha256: string;
+    };
+    const committed = await client.callTool({
+      name: "oj_commit_submission",
+      arguments: {
+        schemaVersion: "oj.submit-commit/v1",
+        requestId: "commit-mcp-1",
+        intentId: preview.intentId,
+        submissionOperationId: preview.submissionOperationId,
+        codeArtifactId: preview.codeArtifactId,
+        codeSha256: preview.codeSha256
+      }
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain("NC218144");
+    expect(prompts[0]).toContain("main.cpp");
+    expect(prompts[0]).toContain(codeSha256);
+    expect(submissions).toBe(1);
+    expect(committed).toMatchObject({
+      structuredContent: {
+        schemaVersion: "oj.submit-result/v1",
+        state: "queued",
+        platformSubmissionId: "90001"
+      }
+    });
+    expect(JSON.stringify(committed)).not.toContain("short-token");
+    await provider.dispose();
     await client.close();
     await server.close();
   });
@@ -252,9 +487,18 @@ describe("NowCoder MCP server", () => {
   });
 });
 
-async function connect(provider: NowCoderProvider): Promise<{ client: Client; server: ReturnType<typeof createNowCoderMcpServer> }> {
+async function connect(
+  provider: NowCoderProvider,
+  confirm?: (message: string) => Promise<{ action: "accept" | "decline" | "cancel"; content?: Record<string, boolean> }>
+): Promise<{ client: Client; server: ReturnType<typeof createNowCoderMcpServer> }> {
   const server = createNowCoderMcpServer({ provider });
-  const client = new Client({ name: "nowcoder-test-client", version: "0.1.0" });
+  const client = new Client(
+    { name: "nowcoder-test-client", version: "0.1.0" },
+    confirm ? { capabilities: { elicitation: { form: {} } } } : undefined
+  );
+  if (confirm) {
+    client.setRequestHandler(ElicitRequestSchema, async (request) => confirm(request.params.message));
+  }
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   await client.connect(clientTransport);

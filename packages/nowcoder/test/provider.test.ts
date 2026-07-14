@@ -7,7 +7,7 @@ const nowIso = () => "2026-07-11T01:02:03.000Z";
 const url = "https://ac.nowcoder.com/acm/problem/218144";
 
 describe("NowCoderProvider", () => {
-  test("fetches a public page while reporting only the audited capability", async () => {
+  test("fetches a public page while reporting the audited read capabilities", async () => {
     const html = await loadFixture("acm-problem.html");
     const provider = new NowCoderProvider({
       client: clientReturning(200, html, { "content-type": "text/html" }),
@@ -32,15 +32,74 @@ describe("NowCoderProvider", () => {
           risk: "R0_public_read",
           compliance: "unofficial"
         },
-        searchProblems: { status: "unsupported" },
-        importProblem: { status: "unsupported" },
+        searchProblems: {
+          status: "available",
+          toolName: "oj_search_problems",
+          transport: "local_stdio",
+          auth: "none",
+          risk: "R0_public_read"
+        },
+        importProblem: {
+          status: "available",
+          toolName: "oj_open_import_window",
+          transport: "local_stdio",
+          auth: "browser",
+          risk: "R0_public_read"
+        },
+        fetchProfile: {
+          status: "available",
+          toolName: "oj_fetch_profile",
+          transport: "local_stdio",
+          auth: "none",
+          risk: "R0_public_read"
+        },
+        listSubmissions: {
+          status: "available",
+          toolName: "oj_list_submissions",
+          transport: "local_stdio",
+          auth: "none",
+          risk: "R0_public_read"
+        },
         localRun: { status: "unsupported" },
-        platformRun: { status: "unsupported" },
-        prepareSubmission: { status: "unsupported" },
-        commitSubmission: { status: "unsupported" },
-        pollSubmission: { status: "unsupported" }
+        platformRun: { status: "auth_required" },
+        prepareSubmission: { status: "auth_required" },
+        commitSubmission: { status: "auth_required" },
+        pollSubmission: { status: "auth_required" }
       },
       source: { kind: "page_adapter", confidence: "derived" }
+    });
+  });
+
+  test("searches the official problem catalog with a bounded page cursor", async () => {
+    const html = await loadFixture("problem-list.html");
+    const requested: string[] = [];
+    const provider = new NowCoderProvider({
+      client: new NowCoderPageClient({ requester: async (requestUrl) => {
+        requested.push(requestUrl.href);
+        return { status: 200, body: html, headers: { "content-type": "text/html" } };
+      } }),
+      nowIso
+    });
+
+    const result = await provider.search({
+      schemaVersion: "oj.search-request/v1",
+      requestId: "search-provider-1",
+      platform: "nowcoder",
+      query: "二分",
+      limit: 20
+    });
+
+    expect(requested).toEqual([
+      "https://ac.nowcoder.com/acm/problem/list?keyword=%E4%BA%8C%E5%88%86&page=1&pageSize=20&order=id&asc=false&difficulty=0&platformTagId=0&sourceTagId=0&status=all&tagId="
+    ]);
+    expect(result).toMatchObject({
+      schemaVersion: "oj.search-result/v1",
+      requestId: "search-provider-1",
+      nextCursor: "2",
+      items: [
+        { ref: { nativeId: "NC286185" } },
+        { ref: { nativeId: "NC306825" } }
+      ]
     });
   });
 
