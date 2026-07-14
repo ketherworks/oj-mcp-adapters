@@ -116,7 +116,7 @@ interface PlatformRunIntent {
 interface PlatformRunJob {
   requestId: string;
   jobId: string;
-  request: OjRunRequest;
+  request: RunResultRequest;
   sample: { ordinal: number; input: string; output: string };
   startedAt: string;
   problemUrl: string;
@@ -470,7 +470,7 @@ export class NowCoderJudgeService {
       this.runJobs.set(intent.request.requestId, {
         requestId: intent.request.requestId,
         jobId: result.jobId,
-        request: intent.request,
+        request: compactRunRequest(intent.request),
         sample: intent.sample,
         startedAt,
         problemUrl: intent.request.problem.url,
@@ -486,7 +486,7 @@ export class NowCoderJudgeService {
       this.runJobs.set(intent.request.requestId, {
         requestId: intent.request.requestId,
         jobId: result.jobId,
-        request: intent.request,
+        request: compactRunRequest(intent.request),
         sample: intent.sample,
         startedAt,
         problemUrl: intent.request.problem.url,
@@ -500,7 +500,7 @@ export class NowCoderJudgeService {
     const job: PlatformRunJob = {
       requestId: intent.request.requestId,
       jobId,
-      request: intent.request,
+      request: compactRunRequest(intent.request),
       sample: intent.sample,
       startedAt,
       problemUrl: intent.request.problem.url,
@@ -654,8 +654,18 @@ function normalizeOutput(value: string): string {
   return value.replace(/\r\n/g, "\n").trimEnd();
 }
 
+interface RunResultRequest {
+  requestId: string;
+  attemptId: string;
+  code: { sha256: string };
+}
+
+function compactRunRequest(request: OjRunRequest): RunResultRequest {
+  return { requestId: request.requestId, attemptId: request.attemptId, code: { sha256: request.code.sha256 } };
+}
+
 function runResult(
-  request: OjRunRequest,
+  request: RunResultRequest,
   jobId: string,
   startedAt: string,
   completedAt: string | undefined,
