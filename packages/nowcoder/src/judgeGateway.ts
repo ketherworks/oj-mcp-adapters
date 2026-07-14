@@ -82,7 +82,11 @@ export function parseNowCoderJudgePageInfo(html: string): NowCoderJudgePageInfo 
   }
   const contestId = field(block, "contestId");
   const teamId = positiveIdentifier(/\bteamId\s*:\s*([1-9]\d*)\b/.exec(block)?.[1]);
-  const isTeamSignUp = /\bisTeamSignUp\s*:\s*true\b/.test(block);
+  const teamFlag = /\bisTeamSignUp\s*:\s*(true|false)\b/.exec(block)?.[1];
+  if (contestId && teamFlag === undefined) {
+    throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder contest pageInfo did not expose a literal team-signup state.");
+  }
+  const isTeamSignUp = teamFlag === "true";
   return {
     questionId,
     ...(contestId ? { contestId } : {}),

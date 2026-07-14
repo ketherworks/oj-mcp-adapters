@@ -218,6 +218,24 @@ describe("NowCoder submission controller", () => {
     expect(gateway.poll).toHaveBeenCalledTimes(1);
   });
 
+  test("never returns a stale nonterminal submission state after a concurrent terminal poll", async () => {
+    const gateway = gatewayFixture();
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
+    const preview = await service.prepareSubmission(request());
+    await service.commitSubmission(commit(preview), true);
+    let resolveSlow!: (value: Record<string, unknown>) => void;
+    gateway.poll
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSlow = resolve; }))
+      .mockResolvedValueOnce({ status: 5, submissionId: "90001", judgeReplyDesc: "答案正确" });
+
+    const slow = service.pollSubmission({ requestId: "poll-slow", submissionOperationId: preview.submissionOperationId });
+    const terminal = await service.pollSubmission({ requestId: "poll-terminal", submissionOperationId: preview.submissionOperationId });
+    resolveSlow({ status: 1 });
+
+    expect(terminal.verdict).toBe("accepted");
+    await expect(slow).resolves.toMatchObject({ requestId: "poll-slow", state: "completed", verdict: "accepted" });
+  });
+
   test("uses the contest and team context in the confirmed payload", async () => {
     const gateway = gatewayFixture();
     const service = new NowCoderJudgeService({ gateway, verifyArtifact });
@@ -335,6 +353,36 @@ describe("NowCoder submission controller", () => {
     expect(completed).toMatchObject({ state: "completed", verdict: "accepted" });
     expect(gateway.submit).toHaveBeenCalledTimes(1);
     await expect(service.preparePlatformRun(run)).rejects.toMatchObject({ code: "policy.blocked" });
+  });
+
+  test("never returns a stale running state after a concurrent terminal run poll", async () => {
+    const gateway = gatewayFixture();
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact, maxPolls: 0 });
+    const prepared = request();
+    const run: OjRunRequest = {
+      schemaVersion: "oj.run-request/v1",
+      requestId: "run-concurrent-poll",
+      attemptId: "attempt-1",
+      problem: prepared.problem,
+      mode: "platform",
+      code: prepared.code,
+      sampleOrdinals: [1],
+      limits: { wallTimeMs: 32_000, outputBytes: 1_048_576, network: "deny" }
+    };
+    const preview = await service.preparePlatformRun(run);
+    await service.commitPlatformRun(preview.intentId, true);
+    let resolveSlow!: (value: Record<string, unknown>) => void;
+    gateway.poll
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSlow = resolve; }))
+      .mockResolvedValueOnce({ status: 28, userOutput: "3\n" });
+
+    const slow = service.pollPlatformRun({ requestId: "run-concurrent-poll" });
+    const terminal = await service.pollPlatformRun({ requestId: "run-concurrent-poll" });
+    resolveSlow({ status: 1 });
+
+    expect(terminal).toMatchObject({ state: "completed", verdict: "accepted" });
+    await expect(slow).resolves.toMatchObject({ state: "completed", verdict: "accepted" });
+    expect(gateway.submit).toHaveBeenCalledTimes(1);
   });
 
   test("reserves a platform-run requestId before asynchronous preparation", async () => {

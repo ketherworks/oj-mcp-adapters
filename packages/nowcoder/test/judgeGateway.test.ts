@@ -44,6 +44,12 @@ describe("NowCoder judge page context", () => {
       <script>window.pageInfo = { problemId: '218144' };</script>
     `)).toThrow("pageInfo did not expose");
   });
+
+  test("fails closed when a contest omits the literal team-signup state", async () => {
+    const html = (await fixture("acm-contest.html")).replace("isTeamSignUp: true,", "");
+
+    expect(() => parseNowCoderJudgePageInfo(html)).toThrow("team-signup state");
+  });
 });
 
 async function fixture(name: string): Promise<string> {

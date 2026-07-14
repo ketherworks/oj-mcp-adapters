@@ -329,10 +329,11 @@ export class NowCoderJudgeService {
     this.purgeExpiredState();
     const job = this.jobs.get(input.submissionOperationId);
     if (!job) throw new NowCoderAdapterError("resource.not_found", "NowCoder submission operation was not found in this process.");
-    if (job.terminalResult) {
-      return ojSubmitResultSchema.parse({ ...job.terminalResult, requestId: input.requestId });
-    }
+    const cached = cachedSubmissionResult(job, input.requestId);
+    if (cached) return cached;
     const data = await this.gateway.poll(job.context, signal);
+    const concurrentTerminal = cachedSubmissionResult(job, input.requestId);
+    if (concurrentTerminal) return concurrentTerminal;
     const status = numeric(data.status);
     if (status === undefined) throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder judge status did not include a numeric state.");
     const terminal = status >= 3;
@@ -544,6 +545,7 @@ export class NowCoderJudgeService {
     for (let poll = 0; poll < polls; poll += 1) {
       if (poll > 0) await this.sleep(1_000, signal);
       const statusData = await this.gateway.poll(job.context, signal);
+      if (job.terminalResult) return job.terminalResult;
       const status = numeric(statusData.status);
       if (status === undefined) throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder run status did not include a numeric state.");
       if (status < 3) continue;
@@ -638,6 +640,12 @@ function unknownSubmissionResult(requestId: string, preview: OjSubmitPreview, ch
     lastCheckedAt: checkedAt,
     source: judgeSource(preview.problem.url, checkedAt)
   });
+}
+
+function cachedSubmissionResult(job: PollJob, requestId: string): OjSubmitResult | undefined {
+  return job.terminalResult === undefined
+    ? undefined
+    : ojSubmitResultSchema.parse({ ...job.terminalResult, requestId });
 }
 
 function numeric(value: unknown): number | undefined {
