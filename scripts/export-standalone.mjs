@@ -387,7 +387,7 @@ function verifyReleaseTag(platform) {
 const manifest = JSON.parse(
   await readFile(new URL("../packages/${platform}/package.json", import.meta.url), "utf8")
 );
-const actualTag = process.env.GITHUB_REF_NAME ?? process.argv[2];
+const actualTag = process.argv[2] ?? process.env.GITHUB_REF_NAME;
 const expectedTag = \`v\${manifest.version}\`;
 
 if (actualTag !== expectedTag) {

@@ -69,6 +69,7 @@ describe("standalone MCP source export", () => {
     expect(() =>
       execFileSync(process.execPath, ["scripts/verify-release-tag.mjs", "v0.1.0"], {
         cwd: outputDir,
+        env: { ...process.env, GITHUB_REF_NAME: "not-the-release-tag" },
         stdio: "pipe"
       })
     ).not.toThrow();
