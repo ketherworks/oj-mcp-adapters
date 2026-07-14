@@ -57,8 +57,8 @@ describe("standalone MCP source export", () => {
     expect(lockfile.lockfileVersion).toBeGreaterThanOrEqual(3);
     const ciWorkflow = await readFile(join(outputDir, ".github", "workflows", "ci.yml"), "utf8");
     expect(ciWorkflow).toContain("npm run check");
-    expect(ciWorkflow).toMatch(/uses: actions\/checkout@[a-f0-9]{40} # v4/);
-    expect(ciWorkflow).toMatch(/uses: actions\/setup-node@[a-f0-9]{40} # v4/);
+    expect(ciWorkflow).toMatch(/uses: actions\/checkout@[a-f0-9]{40} # v7/);
+    expect(ciWorkflow).toMatch(/uses: actions\/setup-node@[a-f0-9]{40} # v7/);
     const releaseWorkflow = await readFile(join(outputDir, ".github", "workflows", "release.yml"), "utf8");
     expect(releaseWorkflow).toContain("npm run release:pack");
     expect(releaseWorkflow).toContain("npm run release:verify-tag");
