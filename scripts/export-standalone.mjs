@@ -136,9 +136,12 @@ export async function exportStandalone({ platform, outputDir, sourceCommit }) {
     const implementationReadme = sourceProviderReadme
       .replace(/^# .+\r?\n/, "")
       .trim();
-    const localizedReadme = config.localizedReadme
+    const sourceLocalizedReadme = config.localizedReadme
       ? await readFile(join(destination, "packages", platform, config.localizedReadme), "utf8")
       : undefined;
+    const localizedReadme = platform === "nowcoder"
+      ? sourceLocalizedReadme?.replaceAll("@kaiserunix/nowcoder-mcp-server", config.packageName)
+      : sourceLocalizedReadme;
 
     await Promise.all([
       writeJson(join(destination, "package.json"), rootManifest(platform, config, providerManifest.version)),
@@ -163,7 +166,12 @@ export async function exportStandalone({ platform, outputDir, sourceCommit }) {
       writeFile(join(destination, "SECURITY.md"), securityPolicy(config), "utf8"),
       ...(localizedReadme === undefined
         ? []
-        : [writeFile(join(destination, config.localizedReadme), localizedReadme, "utf8")]),
+        : [
+            writeFile(join(destination, config.localizedReadme), localizedReadme, "utf8"),
+            ...(platform === "nowcoder"
+              ? [writeFile(join(destination, "packages", platform, config.localizedReadme), localizedReadme, "utf8")]
+              : [])
+          ]),
       writeFile(join(destination, "scripts", "verify-release-tag.mjs"), verifyReleaseTag(platform), "utf8"),
       writeFile(join(destination, ".github", "workflows", "ci.yml"), ciWorkflow(platform, config), "utf8"),
       writeFile(join(destination, ".github", "workflows", "release.yml"), releaseWorkflow(config), "utf8")

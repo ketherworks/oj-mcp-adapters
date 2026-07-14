@@ -124,6 +124,10 @@ describe("standalone MCP source export", () => {
     expect(readme).not.toContain("@kaiserunix/nowcoder-mcp-server");
     expect(chineseReadme).toContain("## 快速开始");
     expect(chineseReadme).toContain("## 提交流程");
+    expect(chineseReadme).toContain("--workspace @ketherworks/nowcoder-oj-mcp");
+    expect(chineseReadme).not.toContain("@kaiserunix/nowcoder-mcp-server");
+    expect(await readFile(join(outputDir, "packages", "nowcoder", "README.zh-CN.md"), "utf8"))
+      .not.toContain("@kaiserunix/nowcoder-mcp-server");
     expect(security).toContain("one acceptance authorizes exactly one POST");
     expect(security).toContain("do not expose authenticated tools through a shared HTTP deployment");
   }, 120_000);
