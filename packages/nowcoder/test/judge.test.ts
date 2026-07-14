@@ -48,7 +48,7 @@ function request(): OjPrepareSubmissionRequest {
 describe("NowCoder submission controller", () => {
   test("prepares an immutable preview without obtaining a token or submitting", async () => {
     const gateway = gatewayFixture();
-    const service = new NowCoderJudgeService({ gateway, now: () => Date.parse(capturedAt), nowIso: () => capturedAt });
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact, now: () => Date.parse(capturedAt), nowIso: () => capturedAt });
 
     const preview = await service.prepareSubmission(request());
 
@@ -69,7 +69,7 @@ describe("NowCoder submission controller", () => {
 
   test("rejects a submission artifact whose claimed hash does not match its source", async () => {
     const gateway = gatewayFixture();
-    const service = new NowCoderJudgeService({ gateway });
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
     const input = request();
     input.code.sha256 = "0".repeat(64);
 
@@ -79,9 +79,34 @@ describe("NowCoder submission controller", () => {
     expect(gateway.submit).not.toHaveBeenCalled();
   });
 
+  test("rejects a caller-supplied problem label that does not match the fetched URL", async () => {
+    const gateway = gatewayFixture();
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
+    const input = request();
+    input.problem.nativeId = "NC999999";
+    input.problem.canonicalId = "nowcoder:NC999999";
+
+    await expect(service.prepareSubmission(input)).rejects.toMatchObject({ code: "confirmation.mismatch" });
+    expect(gateway.obtainAccessToken).not.toHaveBeenCalled();
+    expect(gateway.submit).not.toHaveBeenCalled();
+  });
+
+  test("re-reads the saved file after confirmation and blocks a changed artifact", async () => {
+    const gateway = gatewayFixture();
+    const verifier = vi.fn()
+      .mockResolvedValueOnce({ filePath: "C:\\workspace\\main.cpp", fileName: "main.cpp" })
+      .mockRejectedValueOnce(new NowCoderAdapterError("confirmation.mismatch", "changed"));
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact: verifier });
+    const preview = await service.prepareSubmission(request());
+
+    await expect(service.commitSubmission(commit(preview), true)).rejects.toMatchObject({ code: "confirmation.mismatch" });
+    expect(gateway.obtainAccessToken).not.toHaveBeenCalled();
+    expect(gateway.submit).not.toHaveBeenCalled();
+  });
+
   test("requires server-side authorization and submits exactly once", async () => {
     const gateway = gatewayFixture();
-    const service = new NowCoderJudgeService({ gateway, now: () => Date.parse(capturedAt), nowIso: () => capturedAt });
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact, now: () => Date.parse(capturedAt), nowIso: () => capturedAt });
     const preview = await service.prepareSubmission(request());
     const commit: OjSubmitCommitRequest = {
       schemaVersion: "oj.submit-commit/v1",
@@ -122,7 +147,11 @@ describe("NowCoder submission controller", () => {
       submissionOperationId: preview.submissionOperationId
     });
     expect(polled).toMatchObject({ state: "completed", verdict: "accepted", platformSubmissionId: "90001" });
-    expect(gateway.poll).toHaveBeenCalledWith(expect.objectContaining({ token: "short-token", id: "90001" }), undefined);
+    expect(gateway.poll).toHaveBeenCalledWith(expect.objectContaining({
+      token: "short-token",
+      id: "90001",
+      userId: "123456789"
+    }), undefined);
     expect(JSON.stringify(polled)).not.toContain("short-token");
     await expect(service.commitSubmission(commit, true)).rejects.toMatchObject({ code: "confirmation.expired" });
   });
@@ -130,7 +159,7 @@ describe("NowCoder submission controller", () => {
   test("returns outcome_unknown after an ambiguous submit failure and never retries", async () => {
     const gateway = gatewayFixture();
     gateway.submit.mockRejectedValueOnce(new NowCoderAdapterError("network.timeout", "ambiguous"));
-    const service = new NowCoderJudgeService({ gateway, now: () => Date.parse(capturedAt), nowIso: () => capturedAt });
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact, now: () => Date.parse(capturedAt), nowIso: () => capturedAt });
     const preview = await service.prepareSubmission(request());
     const commit: OjSubmitCommitRequest = {
       schemaVersion: "oj.submit-commit/v1",
@@ -150,11 +179,99 @@ describe("NowCoder submission controller", () => {
     await expect(service.commitSubmission(commit, true)).rejects.toMatchObject({ code: "confirmation.expired" });
   });
 
+  test.each([
+    new DOMException("cancelled after dispatch", "AbortError"),
+    new NowCoderAdapterError("upstream.schema_changed", "malformed success response")
+  ])("treats every unprovable post-dispatch result as outcome_unknown", async (failure) => {
+    const gateway = gatewayFixture();
+    gateway.submit.mockRejectedValueOnce(failure);
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
+    const preview = await service.prepareSubmission(request());
+
+    await expect(service.commitSubmission(commit(preview), true)).resolves.toMatchObject({ state: "outcome_unknown" });
+    expect(gateway.submit).toHaveBeenCalledTimes(1);
+    await expect(service.commitSubmission(commit(preview), true)).rejects.toMatchObject({ code: "confirmation.expired" });
+  });
+
+  test("treats a success response without a job ID as outcome_unknown", async () => {
+    const gateway = gatewayFixture();
+    gateway.submit.mockResolvedValueOnce({ accepted: true });
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
+    const preview = await service.prepareSubmission(request());
+
+    await expect(service.commitSubmission(commit(preview), true)).resolves.toMatchObject({ state: "outcome_unknown" });
+    expect(gateway.submit).toHaveBeenCalledTimes(1);
+  });
+
+  test("caches a terminal submission verdict for idempotent polling", async () => {
+    const gateway = gatewayFixture();
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
+    const preview = await service.prepareSubmission(request());
+    await service.commitSubmission(commit(preview), true);
+    gateway.poll.mockResolvedValueOnce({ status: 5, submissionId: "90001", judgeReplyDesc: "答案正确" });
+
+    const first = await service.pollSubmission({ requestId: "poll-a", submissionOperationId: preview.submissionOperationId });
+    const second = await service.pollSubmission({ requestId: "poll-b", submissionOperationId: preview.submissionOperationId });
+
+    expect(first.verdict).toBe("accepted");
+    expect(second).toMatchObject({ requestId: "poll-b", verdict: "accepted" });
+    expect(gateway.poll).toHaveBeenCalledTimes(1);
+  });
+
+  test("never returns a stale nonterminal submission state after a concurrent terminal poll", async () => {
+    const gateway = gatewayFixture();
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
+    const preview = await service.prepareSubmission(request());
+    await service.commitSubmission(commit(preview), true);
+    let resolveSlow!: (value: Record<string, unknown>) => void;
+    gateway.poll
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSlow = resolve; }))
+      .mockResolvedValueOnce({ status: 5, submissionId: "90001", judgeReplyDesc: "答案正确" });
+
+    const slow = service.pollSubmission({ requestId: "poll-slow", submissionOperationId: preview.submissionOperationId });
+    const terminal = await service.pollSubmission({ requestId: "poll-terminal", submissionOperationId: preview.submissionOperationId });
+    resolveSlow({ status: 1 });
+
+    expect(terminal.verdict).toBe("accepted");
+    await expect(slow).resolves.toMatchObject({ requestId: "poll-slow", state: "completed", verdict: "accepted" });
+  });
+
+  test("uses the contest and team context in the confirmed payload", async () => {
+    const gateway = gatewayFixture();
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
+    const input = request();
+    input.problem = {
+      ...input.problem,
+      nativeId: "11244/A",
+      canonicalId: "nowcoder:11244/A",
+      url: "https://ac.nowcoder.com/acm/contest/11244/A",
+      contest: { nativeId: "11244", index: "A" }
+    };
+    vi.mocked(gateway.prepareContext).mockResolvedValueOnce(preparation({
+      problem: input.problem,
+      userId: "778899",
+      teamId: "778899",
+      contestId: "11244"
+    }));
+    const preview = await service.prepareSubmission(input);
+
+    await service.commitSubmission(commit(preview), true);
+
+    expect(preview.submissionTarget).toEqual({ kind: "team", id: "778899", contestId: "11244" });
+    expect(gateway.obtainAccessToken).toHaveBeenCalledWith("778899", undefined);
+    expect(gateway.submit).toHaveBeenCalledWith(expect.objectContaining({
+      userId: "778899",
+      tagId: 4,
+      remark: "{contestId: 11244}"
+    }), undefined);
+  });
+
   test("uploads one selected sample for platform self-test after authorization", async () => {
     const gateway = gatewayFixture();
     gateway.poll.mockResolvedValueOnce({ status: 28, userOutput: "3\n", timeConsumption: 12, memoryConsumption: 1024 });
     const service = new NowCoderJudgeService({
       gateway,
+      verifyArtifact,
       nowIso: () => capturedAt,
       sleep: async () => undefined,
       maxPolls: 2
@@ -182,7 +299,7 @@ describe("NowCoder submission controller", () => {
       cases: [{ ordinal: 1, verdict: "accepted", stdout: "3\n", timeMs: 12 }]
     });
     expect(gateway.submit).toHaveBeenCalledWith(expect.objectContaining({
-      tagId: 8,
+      tagId: 4,
       submitType: 2,
       selfInputData: "1 2\n",
       selfOutputData: "3\n"
@@ -191,7 +308,7 @@ describe("NowCoder submission controller", () => {
 
   test("rejects a platform-run artifact whose claimed hash does not match its source", async () => {
     const gateway = gatewayFixture();
-    const service = new NowCoderJudgeService({ gateway });
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
     const prepared = request();
     const run: OjRunRequest = {
       schemaVersion: "oj.run-request/v1",
@@ -209,6 +326,106 @@ describe("NowCoder submission controller", () => {
     expect(gateway.obtainAccessToken).not.toHaveBeenCalled();
     expect(gateway.submit).not.toHaveBeenCalled();
   });
+
+  test("continues a dispatched platform run through oj_poll_run without another upload", async () => {
+    const gateway = gatewayFixture();
+    gateway.poll
+      .mockRejectedValueOnce(new NowCoderAdapterError("network.timeout", "poll timeout"))
+      .mockResolvedValueOnce({ status: 28, userOutput: "3\n" });
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact, maxPolls: 1 });
+    const prepared = request();
+    const run: OjRunRequest = {
+      schemaVersion: "oj.run-request/v1",
+      requestId: "run-resume",
+      attemptId: "attempt-1",
+      problem: prepared.problem,
+      mode: "platform",
+      code: prepared.code,
+      sampleOrdinals: [1],
+      limits: { wallTimeMs: 32_000, outputBytes: 1_048_576, network: "deny" }
+    };
+    const preview = await service.preparePlatformRun(run);
+
+    const initial = await service.commitPlatformRun(preview.intentId, true);
+    const completed = await service.pollPlatformRun({ requestId: "run-resume" });
+
+    expect(initial).toMatchObject({ state: "running", verdict: "judging" });
+    expect(completed).toMatchObject({ state: "completed", verdict: "accepted" });
+    expect(gateway.submit).toHaveBeenCalledTimes(1);
+    await expect(service.preparePlatformRun(run)).rejects.toMatchObject({ code: "policy.blocked" });
+  });
+
+  test("never returns a stale running state after a concurrent terminal run poll", async () => {
+    const gateway = gatewayFixture();
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact, maxPolls: 0 });
+    const prepared = request();
+    const run: OjRunRequest = {
+      schemaVersion: "oj.run-request/v1",
+      requestId: "run-concurrent-poll",
+      attemptId: "attempt-1",
+      problem: prepared.problem,
+      mode: "platform",
+      code: prepared.code,
+      sampleOrdinals: [1],
+      limits: { wallTimeMs: 32_000, outputBytes: 1_048_576, network: "deny" }
+    };
+    const preview = await service.preparePlatformRun(run);
+    await service.commitPlatformRun(preview.intentId, true);
+    let resolveSlow!: (value: Record<string, unknown>) => void;
+    gateway.poll
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveSlow = resolve; }))
+      .mockResolvedValueOnce({ status: 28, userOutput: "3\n" });
+
+    const slow = service.pollPlatformRun({ requestId: "run-concurrent-poll" });
+    const terminal = await service.pollPlatformRun({ requestId: "run-concurrent-poll" });
+    resolveSlow({ status: 1 });
+
+    expect(terminal).toMatchObject({ state: "completed", verdict: "accepted" });
+    await expect(slow).resolves.toMatchObject({ state: "completed", verdict: "accepted" });
+    expect(gateway.submit).toHaveBeenCalledTimes(1);
+  });
+
+  test("reserves a platform-run requestId before asynchronous preparation", async () => {
+    const gateway = gatewayFixture();
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
+    const prepared = request();
+    const run: OjRunRequest = {
+      schemaVersion: "oj.run-request/v1",
+      requestId: "run-concurrent",
+      attemptId: "attempt-1",
+      problem: prepared.problem,
+      mode: "platform",
+      code: prepared.code,
+      sampleOrdinals: [1],
+      limits: { wallTimeMs: 32_000, outputBytes: 1_048_576, network: "deny" }
+    };
+
+    const first = service.preparePlatformRun(run);
+    await expect(service.preparePlatformRun(run)).rejects.toMatchObject({ code: "policy.blocked" });
+    await expect(first).resolves.toMatchObject({ requestId: "run-concurrent" });
+  });
+
+  test("releases a platform-run requestId after a definite pre-dispatch token failure", async () => {
+    const gateway = gatewayFixture();
+    gateway.obtainAccessToken.mockRejectedValueOnce(new NowCoderAdapterError("auth.invalid", "expired"));
+    const service = new NowCoderJudgeService({ gateway, verifyArtifact });
+    const prepared = request();
+    const run: OjRunRequest = {
+      schemaVersion: "oj.run-request/v1",
+      requestId: "run-token-failure",
+      attemptId: "attempt-1",
+      problem: prepared.problem,
+      mode: "platform",
+      code: prepared.code,
+      sampleOrdinals: [1],
+      limits: { wallTimeMs: 32_000, outputBytes: 1_048_576, network: "deny" }
+    };
+    const preview = await service.preparePlatformRun(run);
+
+    await expect(service.commitPlatformRun(preview.intentId, true)).rejects.toMatchObject({ code: "auth.invalid" });
+    await expect(service.preparePlatformRun(run)).resolves.toMatchObject({ requestId: "run-token-failure" });
+    expect(gateway.submit).not.toHaveBeenCalled();
+  });
 });
 
 function gatewayFixture(): NowCoderJudgeGateway & {
@@ -217,15 +434,44 @@ function gatewayFixture(): NowCoderJudgeGateway & {
   poll: ReturnType<typeof vi.fn>;
 } {
   return {
-    prepareContext: vi.fn(async () => ({
-      accountId: "123456789",
-      displayName: "student",
-      questionId: "1338275",
-      samples: [{ ordinal: 1, input: "1 2\n", output: "3\n" }],
-      supportedLanguageIds: ["1", "2", "4", "11"]
-    })),
+    prepareContext: vi.fn(async () => preparation()),
     obtainAccessToken: vi.fn(async () => "short-token"),
-    submit: vi.fn(async () => ({ id: "90001", submissionId: "90001" })),
+    submit: vi.fn(async () => ({
+      id: "90001",
+      submissionId: "90001",
+      token: "untrusted-response-token",
+      userId: "untrusted-response-user"
+    })),
     poll: vi.fn(async () => ({ status: 1 }))
+  };
+}
+
+async function verifyArtifact() {
+  return { filePath: "C:\\workspace\\main.cpp", fileName: "main.cpp" };
+}
+
+function preparation(overrides: Partial<Awaited<ReturnType<NowCoderJudgeGateway["prepareContext"]>>> = {}) {
+  return {
+    accountId: "123456789",
+    displayName: "student",
+    questionId: "1338275",
+    problem: request().problem,
+    userId: "123456789",
+    tagId: 4 as const,
+    samples: [{ ordinal: 1, input: "1 2\n", output: "3\n" }],
+    supportedLanguageIds: ["1", "2", "4", "11"],
+    ...overrides
+  };
+}
+
+function commit(preview: Awaited<ReturnType<NowCoderJudgeService["prepareSubmission"]>>): OjSubmitCommitRequest {
+  return {
+    schemaVersion: "oj.submit-commit/v1",
+    requestId: "commit-helper",
+    intentId: preview.intentId,
+    submissionOperationId: preview.submissionOperationId,
+    codeArtifactId: preview.codeArtifactId,
+    confirmationProof: "server-elicitation",
+    codeSha256: preview.codeSha256
   };
 }

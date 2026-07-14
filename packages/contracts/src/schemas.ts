@@ -346,6 +346,14 @@ export const ojSubmitPreviewSchema = z
     account: z
       .object({ accountId: z.string().min(1), displayName: z.string().min(1), site: z.enum(["global", "cn"]).optional() })
       .strict(),
+    submissionTarget: z
+      .object({
+        kind: z.enum(["account", "team"]),
+        id: z.string().min(1),
+        contestId: z.string().min(1).optional()
+      })
+      .strict()
+      .optional(),
     languageKey: z.string().min(1),
     platformLanguageId: z.string().min(1),
     codeArtifactId: z.string().min(1),

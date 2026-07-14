@@ -97,8 +97,15 @@ describe("NowCoderPageClient", () => {
 
   test("uses the audited token, submit, and poll requests without exposing credentials", async () => {
     const observed: Array<{ url: string; method?: string; body?: string; headers?: Readonly<Record<string, string>>; cookie?: string }> = [];
+    const sessionCookie = [
+      "csrf_token=csrf-secret",
+      "NOWCODER_SESSION=nowcoder-session-secret",
+      "NOWCODER_DEVICE=nowcoder-device-secret",
+      "session=ac-session-secret",
+      "token=ac-token-secret"
+    ].join("; ");
     const client = new NowCoderPageClient({
-      sessionCookie: "csrf_token=csrf-secret; session=session-secret",
+      sessionCookie,
       requester: async (requestUrl, context) => {
         observed.push({
           url: requestUrl.href,
@@ -117,27 +124,51 @@ describe("NowCoderPageClient", () => {
       }
     });
 
-    const token = await client.obtainJudgeAccessToken();
+    const token = await client.obtainJudgeAccessToken({ teamId: "42" });
     const submitted = await client.submitJudge({ content: "int main(){}", token, id: "payload" });
     const status = await client.pollJudge({ id: submitted.id!, userId: "123", appId: 6, tagId: 4, submitType: 1, remark: "{}", token, showId: 6, content: "must-not-enter-query" });
 
     expect(token).toBe("short-token");
     expect(status).toMatchObject({ status: 5, submissionId: "90001" });
     expect(observed).toHaveLength(3);
-    expect(observed[0]).toMatchObject({ method: "GET", cookie: "csrf_token=csrf-secret; session=session-secret" });
+    expect(observed[0]).toMatchObject({
+      method: "GET",
+      cookie: "csrf_token=csrf-secret; NOWCODER_SESSION=nowcoder-session-secret; NOWCODER_DEVICE=nowcoder-device-secret"
+    });
     expect(observed[0]!.url).toContain("sceneType=2");
     expect(observed[0]!.url).toContain("token=csrf-secret");
-    expect(observed[1]).toMatchObject({ method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" } });
+    expect(observed[0]!.url).toContain("teamId=42");
+    expect(observed[0]!.headers).toMatchObject({ Origin: "https://d.nowcoder.com", Referer: "https://d.nowcoder.com/" });
+    expect(observed[0]!.cookie).not.toContain("ac-session-secret");
+    expect(observed[0]!.cookie).not.toContain("ac-token-secret");
+    expect(Object.keys(observed[0]!.headers ?? {}).map((name) => name.toLowerCase())).not.toContain("cookie");
+    expect(observed[1]).toMatchObject({
+      method: "POST",
+      cookie: undefined,
+      headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }
+    });
+    expect(Object.keys(observed[1]!.headers ?? {}).map((name) => name.toLowerCase())).not.toContain("cookie");
+    expect(observed[2]).toMatchObject({ method: "GET", cookie: undefined });
+    expect(Object.keys(observed[2]!.headers ?? {}).map((name) => name.toLowerCase())).not.toContain("cookie");
     expect(observed[2]!.url).toContain("token=short-token");
     expect(observed[2]!.url).not.toContain("must-not-enter-query");
+    const output = JSON.stringify({ token, submitted, status });
+    for (const secret of ["csrf-secret", "nowcoder-session-secret", "nowcoder-device-secret", "ac-session-secret", "ac-token-secret"]) {
+      expect(output).not.toContain(secret);
+    }
   });
 
   test("reads per-problem judge language IDs from question metadata", async () => {
-    const requested: string[] = [];
+    const requested: Array<{ url: string; method?: string; headers?: Readonly<Record<string, string>>; cookie?: string }> = [];
     const client = new NowCoderPageClient({
-      sessionCookie: "csrf_token=csrf-secret; session=session-secret",
-      requester: async (requestUrl) => {
-        requested.push(requestUrl.href);
+      sessionCookie: "csrf_token=csrf-secret; NOWCODER_SESSION=nowcoder-secret; session=ac-session-secret",
+      requester: async (requestUrl, context) => {
+        requested.push({
+          url: requestUrl.href,
+          method: context.method,
+          headers: context.headers,
+          cookie: context.sessionCookie
+        });
         return response(200, JSON.stringify({
           code: 0,
           data: { codingInfo: { supportLanguages: [{ langId: 1 }, { langId: 2 }, { langId: "11" }] } }
@@ -145,10 +176,22 @@ describe("NowCoderPageClient", () => {
       }
     });
 
-    await expect(client.getQuestionSupportLanguageIds("1338275")).resolves.toEqual(["1", "2", "11"]);
+    const languages = await client.getQuestionSupportLanguageIds("1338275");
+    expect(languages).toEqual(["1", "2", "11"]);
     expect(requested).toEqual([
-      "https://questionbank.nowcoder.com/api/qmp/question/detail?id=1338275&version=3&sceneType=3001"
+      {
+        url: "https://questionbank.nowcoder.com/api/qmp/question/detail?id=1338275&version=3&sceneType=3001",
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+          Origin: "https://ac.nowcoder.com",
+          Referer: "https://ac.nowcoder.com/"
+        },
+        cookie: undefined
+      }
     ]);
+    expect(JSON.stringify(languages)).not.toMatch(/csrf-secret|nowcoder-secret|ac-session-secret/);
   });
 
   test("attaches an opaque local session only to an allowlisted NowCoder request", async () => {
@@ -168,6 +211,60 @@ describe("NowCoderPageClient", () => {
       url: "https://ac.nowcoder.com/acm/problem/218144",
       sessionCookie: "NOWCODER_SESSION=secret-value; token=second-secret"
     }]);
+  });
+
+  test.each([
+    {
+      endpoint: "ac.nowcoder.com page",
+      expectedCookie: "csrf_token=csrf-secret; NOWCODER_SESSION=nowcoder-secret; session=ac-session-secret",
+      request: (client: NowCoderPageClient) => client.getProblemPage("https://ac.nowcoder.com/acm/problem/218144")
+    },
+    {
+      endpoint: "gw-c access token",
+      expectedCookie: "csrf_token=csrf-secret; NOWCODER_SESSION=nowcoder-secret",
+      request: (client: NowCoderPageClient) => client.obtainJudgeAccessToken()
+    },
+    {
+      endpoint: "questionbank metadata",
+      expectedCookie: undefined,
+      request: (client: NowCoderPageClient) => client.getQuestionSupportLanguageIds("1338275")
+    },
+    {
+      endpoint: "victorinox submit",
+      expectedCookie: undefined,
+      request: (client: NowCoderPageClient) => client.submitJudge({ id: "payload", token: "judge-token" })
+    },
+    {
+      endpoint: "victorinox poll",
+      expectedCookie: undefined,
+      request: (client: NowCoderPageClient) => client.pollJudge({ id: "90001", token: "judge-token" })
+    }
+  ])("keeps $endpoint request errors free of startup-cookie secrets", async ({ expectedCookie, request }) => {
+    const sessionCookie = "csrf_token=csrf-secret; NOWCODER_SESSION=nowcoder-secret; session=ac-session-secret";
+    const contexts: Array<{ sessionCookie?: string; headers?: Readonly<Record<string, string>> }> = [];
+    const client = new NowCoderPageClient({
+      sessionCookie,
+      requester: async (_url, context) => {
+        contexts.push({ sessionCookie: context.sessionCookie, headers: context.headers });
+        return response(500, sessionCookie, { "content-type": "text/plain" });
+      }
+    });
+
+    let thrown: unknown;
+    try {
+      await request(client);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(contexts).toHaveLength(1);
+    expect(contexts[0]?.sessionCookie).toBe(expectedCookie);
+    expect(Object.keys(contexts[0]?.headers ?? {}).map((name) => name.toLowerCase())).not.toContain("cookie");
+    expect(thrown).toMatchObject({ code: "upstream.unavailable" });
+    const visibleError = `${String(thrown)} ${JSON.stringify(thrown)}`;
+    for (const secret of ["csrf-secret", "nowcoder-secret", "ac-session-secret"]) {
+      expect(visibleError).not.toContain(secret);
+    }
   });
 
   test.each([

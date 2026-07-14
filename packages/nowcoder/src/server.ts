@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult, type Tool } from "@modelcontextprotocol/sdk/types.js";
 import {
   ojCapabilitiesSchema,
+  ojCodeArtifactSchema,
   ojErrorSchema,
   ojImportPreviewSchema,
   ojImportWindowRequestSchema,
@@ -16,18 +17,19 @@ import {
   ojSubmitPreviewSchema,
   ojSubmitResultSchema,
   type OjSubmitPreview,
-  type OjRunRequest,
   type OjError,
   type OjErrorCode
 } from "@kaiserunix/oj-mcp-contracts";
 import { toOjToolOutputSchema, toToolError, toToolResult } from "@kaiserunix/oj-mcp-server-common";
 import { z } from "zod";
 import { nowCoderAuthStatusSchema } from "./auth.js";
+import { safeConfirmationValue } from "./artifact.js";
 import { NowCoderAdapterError } from "./errors.js";
 import { nowCoderProfileSchema } from "./profile.js";
 import { NowCoderProvider, nowCoderProfileInputSchema, nowCoderSearchInputSchema, nowCoderSubmissionsInputSchema } from "./provider.js";
 import { nowCoderSubmissionListSchema } from "./submissions.js";
 import type { NowCoderProblemLocator } from "./url.js";
+import type { NowCoderPlatformRunPreview } from "./judge.js";
 
 export const NOWCODER_MCP_TOOL_NAMES = [
   "oj_capabilities",
@@ -42,6 +44,7 @@ export const NOWCODER_MCP_TOOL_NAMES = [
   "oj_commit_submission",
   "oj_poll_submission",
   "oj_platform_run",
+  "oj_poll_run",
   "nowcoder_auth_status"
 ] as const;
 
@@ -56,6 +59,16 @@ const fetchProblemInputSchema = z.object({
   message: "Provide exactly one URL or nativeId."
 });
 const emptyInputSchema = z.object({}).strict();
+const nowCoderCodeArtifactSchema = ojCodeArtifactSchema.safeExtend({
+  sourceUri: z.string().url().min(8).max(4_096),
+  sourceWasDirty: z.literal(false)
+}).strict();
+const nowCoderPrepareSubmissionInputSchema = ojPrepareSubmissionRequestSchema.extend({
+  code: nowCoderCodeArtifactSchema
+}).strict();
+const nowCoderRunInputSchema = ojRunRequestSchema.extend({
+  code: nowCoderCodeArtifactSchema
+}).strict();
 const completeImportInputSchema = z.object({
   windowId: z.string().min(1).max(100)
 }).strict();
@@ -63,6 +76,9 @@ const commitSubmissionInputSchema = ojSubmitCommitRequestSchema.omit({ confirmat
 const pollSubmissionInputSchema = z.object({
   requestId: z.string().min(1).max(200),
   submissionOperationId: z.string().min(1).max(200)
+}).strict();
+const pollRunInputSchema = z.object({
+  requestId: z.string().min(1).max(200)
 }).strict();
 
 const tools: Tool[] = [
@@ -85,17 +101,25 @@ const tools: Tool[] = [
   tool(
     "oj_platform_run",
     "Run on NowCoder",
-    "Show an MCP-native confirmation prompt, upload the immutable code artifact for one NowCoder sample, and return the platform result.",
-    ojRunRequestSchema,
+    "Resolve the official problem and saved local file, show an MCP-native confirmation, upload that immutable artifact for one sample, and return the platform result.",
+    nowCoderRunInputSchema,
     ojRunResultSchema,
     true,
     "localAction"
   ),
   tool(
+    "oj_poll_run",
+    "Poll NowCoder Platform Run",
+    "Continue polling a previously dispatched NowCoder platform run by its stable requestId without uploading code again.",
+    pollRunInputSchema,
+    ojRunResultSchema,
+    true
+  ),
+  tool(
     "oj_prepare_submission",
     "Prepare NowCoder Submission",
-    "Validate the account, problem, language, and immutable code artifact, then return a two-minute submission preview without submitting.",
-    ojPrepareSubmissionRequestSchema,
+    "Validate the official problem, saved local file, submitter, contest, language, and immutable code artifact, then return a two-minute preview.",
+    nowCoderPrepareSubmissionInputSchema,
     ojSubmitPreviewSchema,
     true,
     "localAction"
@@ -216,11 +240,11 @@ export function createNowCoderMcpServer(options: { provider?: NowCoderProvider }
             signal: extra.signal
           });
         case "oj_prepare_submission":
-          return provider.prepareSubmission(parseInput(ojPrepareSubmissionRequestSchema, input, request.params.name), extra.signal);
+          return provider.prepareSubmission(parseInput(nowCoderPrepareSubmissionInputSchema, input, request.params.name), extra.signal);
         case "oj_commit_submission": {
           const parsed = parseInput(commitSubmissionInputSchema, input, request.params.name);
-          const preview = provider.getSubmissionPreview(parsed.intentId);
-          const authorized = await confirmRealSubmission(server, preview, extra.signal);
+          const confirmation = provider.getSubmissionConfirmation(parsed.intentId);
+          const authorized = await confirmRealSubmission(server, confirmation, extra.signal);
           return provider.commitSubmission({
             ...parsed,
             confirmationProof: "mcp-form-elicitation"
@@ -229,10 +253,19 @@ export function createNowCoderMcpServer(options: { provider?: NowCoderProvider }
         case "oj_poll_submission":
           return provider.pollSubmission(parseInput(pollSubmissionInputSchema, input, request.params.name), extra.signal);
         case "oj_platform_run": {
-          const parsed = parseInput(ojRunRequestSchema, input, request.params.name);
-          const authorized = await confirmPlatformRun(server, parsed, extra.signal);
-          return provider.platformRun(parsed, authorized, extra.signal);
+          const parsed = parseInput(nowCoderRunInputSchema, input, request.params.name);
+          const preview = await provider.preparePlatformRun(parsed, extra.signal);
+          let authorized: boolean;
+          try {
+            authorized = await confirmPlatformRun(server, preview, extra.signal);
+          } catch (error) {
+            provider.cancelPlatformRun(preview.intentId);
+            throw error;
+          }
+          return provider.commitPlatformRun(preview.intentId, authorized, extra.signal);
         }
+        case "oj_poll_run":
+          return provider.pollPlatformRun(parseInput(pollRunInputSchema, input, request.params.name), extra.signal);
         default:
           throw new NowCoderAdapterError("request.invalid", "Unknown NowCoder tool name.");
       }
@@ -359,17 +392,21 @@ function realSubmitAnnotations(openWorldHint: boolean) {
 
 async function confirmRealSubmission(
   server: McpServer,
-  preview: OjSubmitPreview,
+  confirmation: { preview: OjSubmitPreview; filePath: string },
   signal?: AbortSignal
 ): Promise<boolean> {
+  const { preview } = confirmation;
+  const target = preview.submissionTarget;
   try {
     const result = await server.server.elicitInput({
       mode: "form",
       message: [
-        `确认提交到牛客：${preview.problem.nativeId}`,
-        `账号：${preview.account.displayName} (${preview.account.accountId})`,
-        `语言：${preview.languageKey} / ${preview.platformLanguageId}`,
-        `文件：${preview.fileLabel}`,
+        `确认提交到牛客：${safeConfirmationValue(preview.problem.nativeId, "Problem ID")}`,
+        `登录账号：${safeConfirmationValue(preview.account.displayName, "Account name")} (${preview.account.accountId})`,
+        `提交主体：${target?.kind === "team" ? "团队" : "个人"} ${target?.id ?? preview.account.accountId}`,
+        `比赛：${target?.contestId ?? "题库"}`,
+        `语言：${safeConfirmationValue(preview.languageKey, "Language name")} / ${preview.platformLanguageId}`,
+        `已保存文件：${safeConfirmationValue(confirmation.filePath, "Source path")}`,
         `代码：${preview.codeBytes} bytes / SHA-256 ${preview.codeSha256}`
       ].join("\n"),
       requestedSchema: {
@@ -386,21 +423,25 @@ async function confirmRealSubmission(
       }
     }, { signal });
     return result.action === "accept" && result.content?.confirm === true;
-  } catch {
+  } catch (error) {
+    if (error instanceof NowCoderAdapterError) throw error;
     throw new NowCoderAdapterError("confirmation.required", "The MCP client must show and accept the real-submission confirmation form.");
   }
 }
 
-async function confirmPlatformRun(server: McpServer, request: OjRunRequest, signal?: AbortSignal): Promise<boolean> {
+async function confirmPlatformRun(server: McpServer, preview: NowCoderPlatformRunPreview, signal?: AbortSignal): Promise<boolean> {
   try {
+    const target = preview.submissionTarget;
     const result = await server.server.elicitInput({
       mode: "form",
       message: [
-        `确认上传源码到牛客自测：${request.problem.nativeId}`,
-        `语言：${request.code.languageKey} / ${request.code.platformLanguageId ?? "未指定"}`,
-        `文件：${request.code.fileName ?? "student-code"}`,
-        `代码：${request.code.bytes} bytes / SHA-256 ${request.code.sha256}`,
-        `样例：${request.sampleOrdinals?.[0] ?? 1}`
+        `确认上传源码到牛客自测：${safeConfirmationValue(preview.problem.nativeId, "Problem ID")}`,
+        `提交主体：${target.kind === "team" ? "团队" : "个人"} ${target.id}`,
+        `比赛：${target.contestId ?? "题库"}`,
+        `语言：${safeConfirmationValue(preview.languageKey, "Language name")} / ${preview.platformLanguageId}`,
+        `已保存文件：${safeConfirmationValue(preview.filePath, "Source path")}`,
+        `代码：${preview.codeBytes} bytes / SHA-256 ${preview.codeSha256}`,
+        `样例：${preview.sampleOrdinal}`
       ].join("\n"),
       requestedSchema: {
         type: "object",
@@ -416,7 +457,8 @@ async function confirmPlatformRun(server: McpServer, request: OjRunRequest, sign
       }
     }, { signal });
     return result.action === "accept" && result.content?.confirm === true;
-  } catch {
+  } catch (error) {
+    if (error instanceof NowCoderAdapterError) throw error;
     throw new NowCoderAdapterError("confirmation.required", "The MCP client must show and accept the platform-run confirmation form.");
   }
 }

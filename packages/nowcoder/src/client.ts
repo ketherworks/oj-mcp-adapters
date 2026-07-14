@@ -398,14 +398,21 @@ export class NowCoderPageClient {
     }
   }
 
-  async obtainJudgeAccessToken(options: { signal?: AbortSignal } = {}): Promise<string> {
+  async obtainJudgeAccessToken(options: { signal?: AbortSignal; teamId?: string } = {}): Promise<string> {
     const csrf = this.cookieValue("csrf_token");
     if (!csrf) throw new NowCoderAdapterError("auth.invalid", "The configured NowCoder session does not contain csrf_token.");
+    if (options.teamId !== undefined && !/^[1-9]\d{0,15}$/.test(options.teamId)) {
+      throw new NowCoderAdapterError("request.invalid", "NowCoder teamId must be a positive numeric ID.");
+    }
     const url = new URL("https://gw-c.nowcoder.com/api/sparta/base-oauth/access-token");
     url.searchParams.set("sceneType", "2");
     url.searchParams.set("token", csrf);
     url.searchParams.set("lang", "zh-CN");
-    const response = await this.jsonAction(url, { method: "GET" }, options);
+    if (options.teamId) url.searchParams.set("teamId", options.teamId);
+    const response = await this.jsonAction(url, {
+      method: "GET",
+      headers: { Origin: "https://d.nowcoder.com", Referer: "https://d.nowcoder.com/" }
+    }, options);
     const envelope = response as { success?: unknown; code?: unknown; data?: unknown };
     const data = envelope.data as { accessToken?: unknown } | null;
     if (envelope.success !== true || !data || typeof data.accessToken !== "string" || !data.accessToken.trim()) {
@@ -463,11 +470,12 @@ export class NowCoderPageClient {
     init: { method?: "GET" | "POST"; body?: string; headers?: Readonly<Record<string, string>> } = {}
   ): Promise<NowCoderHttpResponse> {
     try {
+      const requestCookie = this.cookieForRequest(url);
       return await abortable(this.requester(url, {
         ...this.limits,
         signal,
         ...init,
-        ...(this.sessionCookie === undefined ? {} : { sessionCookie: this.sessionCookie })
+        ...(requestCookie === undefined ? {} : { sessionCookie: requestCookie })
       }), signal);
     } catch (error) {
       if (callerSignal?.aborted) {
@@ -506,7 +514,7 @@ export class NowCoderPageClient {
 
   private async jsonAction(
     url: URL,
-    init: { method: "GET" | "POST"; body?: string },
+    init: { method: "GET" | "POST"; body?: string; headers?: Readonly<Record<string, string>> },
     options: { signal?: AbortSignal }
   ): Promise<unknown> {
     if (this.sessionCookie === undefined) throw new NowCoderAdapterError("auth.required", "Configure a local NowCoder session for judge operations.");
@@ -523,7 +531,8 @@ export class NowCoderPageClient {
           "X-Requested-With": "XMLHttpRequest",
           Origin: "https://ac.nowcoder.com",
           Referer: "https://ac.nowcoder.com/",
-          ...(init.method === "POST" ? { "Content-Type": "application/json" } : {})
+          ...(init.method === "POST" ? { "Content-Type": "application/json" } : {}),
+          ...init.headers
         }
       });
       const responseStatus = validHttpStatus(response.status);
@@ -551,6 +560,21 @@ export class NowCoderPageClient {
       return value || undefined;
     }
     return undefined;
+  }
+
+  private cookieForRequest(url: URL): string | undefined {
+    if (url.hostname === "ac.nowcoder.com") return this.sessionCookie;
+    if (url.hostname !== "gw-c.nowcoder.com") return undefined;
+
+    const selected: string[] = [];
+    for (const part of this.sessionCookie?.split(";") ?? []) {
+      const separator = part.indexOf("=");
+      if (separator < 1) continue;
+      const name = part.slice(0, separator).trim();
+      if (name !== "csrf_token" && !name.startsWith("NOWCODER")) continue;
+      selected.push(`${name}=${part.slice(separator + 1).trim()}`);
+    }
+    return selected.length === 0 ? undefined : selected.join("; ");
   }
 
   private assertHtmlResponse(response: NowCoderHttpResponse, label: string): void {

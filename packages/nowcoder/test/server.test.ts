@@ -83,6 +83,13 @@ describe("NowCoder MCP server", () => {
       "nativeId",
       "url"
     ]);
+    const prepareTool = listed.tools.find((tool) => tool.name === "oj_prepare_submission");
+    const prepareCodeSchema = ((prepareTool?.inputSchema.properties as Record<string, unknown>)?.code ?? {}) as {
+      required?: string[];
+      properties?: Record<string, unknown>;
+    };
+    expect(prepareCodeSchema.required).toEqual(expect.arrayContaining(["sourceUri", "sourceWasDirty"]));
+    expect(prepareCodeSchema.properties).toHaveProperty("sourceUri");
     expect("structuredContent" in urlResult && urlResult.structuredContent).toMatchObject({
       schemaVersion: "oj.problem-document/v1",
       ref: { platform: "nowcoder", nativeId: "NC218144" }
@@ -222,6 +229,23 @@ describe("NowCoder MCP server", () => {
         accountId: "123456789",
         displayName: "student",
         questionId: "1338275",
+        problem: {
+          schemaVersion: "oj.problem-ref/v1",
+          platform: "nowcoder",
+          nativeId: "NC218144",
+          canonicalId: "nowcoder:NC218144",
+          url,
+          source: {
+            kind: "page_adapter",
+            adapterId: "nowcoder-public-page",
+            adapterVersion: "0.2.0",
+            fetchedAt: "2026-07-14T17:00:00.000Z",
+            sourceUrl: url,
+            confidence: "derived"
+          }
+        },
+        userId: "123456789",
+        tagId: 4,
         samples: [{ ordinal: 1, input: "1 2\n", output: "3\n" }],
         supportedLanguageIds: ["1", "2", "4", "11"]
       }),
@@ -232,7 +256,10 @@ describe("NowCoder MCP server", () => {
       },
       poll: async () => ({ status: 5, submissionId: "90001" })
     };
-    const judge = new NowCoderJudgeService({ gateway });
+    const judge = new NowCoderJudgeService({
+      gateway,
+      verifyArtifact: async () => ({ filePath: "C:\\workspace\\main.cpp", fileName: "main.cpp" })
+    });
     const provider = new NowCoderProvider({ judge });
     const prompts: string[] = [];
     const { client, server } = await connect(provider, async (message) => {
@@ -272,6 +299,7 @@ describe("NowCoder MCP server", () => {
           sha256: codeSha256,
           bytes: Buffer.byteLength(source),
           fileName: "main.cpp",
+          sourceUri: "file:///C:/workspace/main.cpp",
           capturedAt: "2026-07-14T17:00:00.000Z",
           sourceWasDirty: false
         }

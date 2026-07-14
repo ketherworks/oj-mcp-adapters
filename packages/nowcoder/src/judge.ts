@@ -7,6 +7,7 @@ import {
   ojSubmitPreviewSchema,
   ojSubmitResultSchema,
   type OjPrepareSubmissionRequest,
+  type OjProblemRef,
   type OjRunRequest,
   type OjRunResult,
   type OjSubmitCommitRequest,
@@ -15,6 +16,7 @@ import {
   type OjSourceRef,
   type OjVerdict
 } from "@kaiserunix/oj-mcp-contracts";
+import { safeConfirmationValue, verifySavedCodeArtifact, type NowCoderArtifactVerifier } from "./artifact.js";
 import { NowCoderAdapterError } from "./errors.js";
 
 const PROVIDER_ID = "nowcoder-public-page";
@@ -38,6 +40,11 @@ export interface NowCoderJudgePreparation {
   accountId: string;
   displayName: string;
   questionId: string;
+  problem: OjProblemRef;
+  userId: string;
+  tagId: 4;
+  contestId?: string;
+  teamId?: string;
   samples: Array<{ ordinal: number; input: string; output: string }>;
   supportedLanguageIds: string[];
 }
@@ -46,7 +53,7 @@ export interface NowCoderJudgeSubmitPayload {
   content: string;
   questionId: string;
   language: string;
-  tagId: 4 | 8;
+  tagId: 4;
   appId: 6;
   userId: string;
   submitType: 1 | 2;
@@ -58,7 +65,7 @@ export interface NowCoderJudgeSubmitPayload {
 
 export interface NowCoderJudgeGateway {
   prepareContext(problemUrl: string, accountId?: string, signal?: AbortSignal): Promise<NowCoderJudgePreparation>;
-  obtainAccessToken(signal?: AbortSignal): Promise<string>;
+  obtainAccessToken(teamId?: string, signal?: AbortSignal): Promise<string>;
   submit(payload: NowCoderJudgeSubmitPayload, signal?: AbortSignal): Promise<Record<string, unknown>>;
   poll(context: Record<string, unknown>, signal?: AbortSignal): Promise<Record<string, unknown>>;
 }
@@ -66,7 +73,8 @@ export interface NowCoderJudgeGateway {
 interface SubmissionIntent {
   preview: OjSubmitPreview;
   request: OjPrepareSubmissionRequest;
-  questionId: string;
+  preparation: NowCoderJudgePreparation;
+  verifiedFilePath: string;
   phase: "prepared" | "committing" | "consumed";
 }
 
@@ -80,6 +88,41 @@ interface PollJob {
   platformSubmissionId: string;
   submittedAt: string;
   expiresAtMs: number;
+  terminalResult?: OjSubmitResult;
+}
+
+export interface NowCoderPlatformRunPreview {
+  intentId: string;
+  expiresAt: string;
+  requestId: string;
+  problem: OjProblemRef;
+  submissionTarget: { kind: "account" | "team"; id: string; contestId?: string };
+  languageKey: string;
+  platformLanguageId: string;
+  filePath: string;
+  codeSha256: string;
+  codeBytes: number;
+  sampleOrdinal: number;
+}
+
+interface PlatformRunIntent {
+  preview: NowCoderPlatformRunPreview;
+  request: OjRunRequest;
+  preparation: NowCoderJudgePreparation;
+  sample: { ordinal: number; input: string; output: string };
+  phase: "prepared" | "committing" | "consumed";
+}
+
+interface PlatformRunJob {
+  requestId: string;
+  jobId: string;
+  request: RunResultRequest;
+  sample: { ordinal: number; input: string; output: string };
+  startedAt: string;
+  problemUrl: string;
+  expiresAtMs: number;
+  context?: Record<string, unknown>;
+  terminalResult?: OjRunResult;
 }
 
 export interface NowCoderJudgeServiceOptions {
@@ -88,6 +131,7 @@ export interface NowCoderJudgeServiceOptions {
   nowIso?: () => string;
   sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   maxPolls?: number;
+  verifyArtifact?: NowCoderArtifactVerifier;
 }
 
 export class NowCoderJudgeService {
@@ -96,8 +140,12 @@ export class NowCoderJudgeService {
   private readonly nowIso: () => string;
   private readonly sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   private readonly maxPolls: number;
+  private readonly verifyArtifact: NowCoderArtifactVerifier;
   private readonly intents = new Map<string, SubmissionIntent>();
   private readonly jobs = new Map<string, PollJob>();
+  private readonly runIntents = new Map<string, PlatformRunIntent>();
+  private readonly runJobs = new Map<string, PlatformRunJob>();
+  private readonly reservedRunRequestIds = new Set<string>();
 
   constructor(options: NowCoderJudgeServiceOptions) {
     this.gateway = options.gateway;
@@ -105,6 +153,7 @@ export class NowCoderJudgeService {
     this.nowIso = options.nowIso ?? (() => new Date().toISOString());
     this.sleep = options.sleep ?? abortableSleep;
     this.maxPolls = options.maxPolls ?? 32;
+    this.verifyArtifact = options.verifyArtifact ?? verifySavedCodeArtifact;
   }
 
   async prepareSubmission(input: OjPrepareSubmissionRequest, signal?: AbortSignal): Promise<OjSubmitPreview> {
@@ -120,6 +169,8 @@ export class NowCoderJudgeService {
       throw new NowCoderAdapterError("request.invalid", "NowCoder submission source must not exceed 1 MiB.");
     }
     assertCodeHash(parsed.data.code.source, parsed.data.code.sha256);
+    safeConfirmationValue(parsed.data.languageKey, "Language name");
+    const verified = await this.verifyArtifact(parsed.data.code, signal);
     const context = await this.gateway.prepareContext(parsed.data.problem.url, parsed.data.accountId, signal);
     if (context.accountId !== parsed.data.accountId) {
       throw new NowCoderAdapterError("auth.forbidden", "The requested NowCoder account does not match the signed-in account.");
@@ -127,6 +178,7 @@ export class NowCoderJudgeService {
     if (!context.supportedLanguageIds.includes(parsed.data.platformLanguageId)) {
       throw new NowCoderAdapterError("language.unsupported", "This NowCoder problem does not accept the selected language ID.");
     }
+    assertProblemMatch(parsed.data.problem, context.problem);
 
     const intentId = randomUUID();
     const submissionOperationId = randomUUID();
@@ -138,19 +190,26 @@ export class NowCoderJudgeService {
       expiresAt: new Date(this.now() + INTENT_TTL_MS).toISOString(),
       attemptId: parsed.data.attemptId,
       providerId: PROVIDER_ID,
-      problem: parsed.data.problem,
+      problem: context.problem,
       account: { accountId: context.accountId, displayName: context.displayName },
+      submissionTarget: submissionTarget(context),
       languageKey: parsed.data.languageKey,
       platformLanguageId: parsed.data.platformLanguageId,
       codeArtifactId,
-      fileLabel: parsed.data.code.fileName ?? "student-code",
-      sourceWasDirty: parsed.data.code.sourceWasDirty,
+      fileLabel: verified.fileName,
+      sourceWasDirty: false,
       codeSha256: parsed.data.code.sha256,
       codeBytes: parsed.data.code.bytes,
-      warnings: parsed.data.code.sourceWasDirty ? ["The captured editor document had unsaved changes."] : [],
-      actionLabel: `提交 ${parsed.data.problem.nativeId} 到牛客`
+      warnings: context.teamId ? [`提交主体为团队 ${context.teamId}`] : [],
+      actionLabel: `提交 ${context.problem.nativeId} 到牛客`
     });
-    this.intents.set(intentId, { preview, request: parsed.data, questionId: context.questionId, phase: "prepared" });
+    this.intents.set(intentId, {
+      preview,
+      request: { ...parsed.data, problem: context.problem },
+      preparation: context,
+      verifiedFilePath: verified.filePath,
+      phase: "prepared"
+    });
     return preview;
   }
 
@@ -159,6 +218,12 @@ export class NowCoderJudgeService {
     const intent = this.intents.get(intentId);
     if (!intent) throw new NowCoderAdapterError("confirmation.expired", "Submission preview expired or was already consumed.");
     return intent.preview;
+  }
+
+  getSubmissionConfirmation(intentId: string): { preview: OjSubmitPreview; filePath: string } {
+    const preview = this.getSubmissionPreview(intentId);
+    const intent = this.intents.get(intentId)!;
+    return { preview, filePath: intent.verifiedFilePath };
   }
 
   async commitSubmission(input: OjSubmitCommitRequest, authorized: boolean, signal?: AbortSignal): Promise<OjSubmitResult> {
@@ -185,9 +250,19 @@ export class NowCoderJudgeService {
     }
 
     intent.phase = "committing";
+    let verified;
+    try {
+      verified = await this.verifyArtifact(intent.request.code, signal);
+      if (verified.filePath !== intent.verifiedFilePath) {
+        throw new NowCoderAdapterError("confirmation.mismatch", "The resolved source path changed after confirmation.");
+      }
+    } catch (error) {
+      this.intents.delete(intent.preview.intentId);
+      throw error;
+    }
     let token: string;
     try {
-      token = await this.gateway.obtainAccessToken(signal);
+      token = await this.gateway.obtainAccessToken(intent.preparation.teamId, signal);
     } catch (error) {
       intent.phase = "prepared";
       throw error;
@@ -195,13 +270,13 @@ export class NowCoderJudgeService {
     intent.phase = "consumed";
     const payload: NowCoderJudgeSubmitPayload = {
       content: intent.request.code.source,
-      questionId: intent.questionId,
+      questionId: intent.preparation.questionId,
       language: intent.request.platformLanguageId,
-      tagId: 4,
+      tagId: intent.preparation.tagId,
       appId: 6,
-      userId: intent.request.accountId,
+      userId: intent.preparation.userId,
       submitType: 1,
-      remark: "{contestId: undefined}",
+      remark: contestRemark(intent.preparation.contestId),
       token
     };
     const checkedAt = this.nowIso();
@@ -239,20 +314,8 @@ export class NowCoderJudgeService {
       });
     } catch (error) {
       this.intents.delete(intent.preview.intentId);
-      if (error instanceof NowCoderAdapterError && (error.code === "network.timeout" || error.code === "upstream.unavailable")) {
-        return ojSubmitResultSchema.parse({
-          schemaVersion: "oj.submit-result/v1",
-          requestId: parsed.data.requestId,
-          intentId: intent.preview.intentId,
-          submissionOperationId: intent.preview.submissionOperationId,
-          state: "outcome_unknown",
-          verdict: "unknown",
-          codeSha256: intent.preview.codeSha256,
-          lastCheckedAt: checkedAt,
-          source: judgeSource(intent.preview.problem.url, checkedAt)
-        });
-      }
-      throw error;
+      if (isDefiniteSubmitRejection(error)) throw error;
+      return unknownSubmissionResult(parsed.data.requestId, intent.preview, checkedAt);
     }
   }
 
@@ -266,7 +329,11 @@ export class NowCoderJudgeService {
     this.purgeExpiredState();
     const job = this.jobs.get(input.submissionOperationId);
     if (!job) throw new NowCoderAdapterError("resource.not_found", "NowCoder submission operation was not found in this process.");
+    const cached = cachedSubmissionResult(job, input.requestId);
+    if (cached) return cached;
     const data = await this.gateway.poll(job.context, signal);
+    const concurrentTerminal = cachedSubmissionResult(job, input.requestId);
+    if (concurrentTerminal) return concurrentTerminal;
     const status = numeric(data.status);
     if (status === undefined) throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder judge status did not include a numeric state.");
     const terminal = status >= 3;
@@ -287,69 +354,210 @@ export class NowCoderJudgeService {
       lastCheckedAt: checkedAt,
       source: judgeSource(job.problemUrl, checkedAt)
     });
-    if (terminal) this.jobs.delete(input.submissionOperationId);
+    if (terminal) job.terminalResult = result;
     return result;
   }
 
-  async platformRun(input: OjRunRequest, authorized: boolean, signal?: AbortSignal): Promise<OjRunResult> {
+  async preparePlatformRun(input: OjRunRequest, signal?: AbortSignal): Promise<NowCoderPlatformRunPreview> {
+    this.purgeExpiredState();
     const parsed = ojRunRequestSchema.safeParse(input);
     if (!parsed.success || parsed.data.problem.platform !== "nowcoder" || parsed.data.mode !== "platform") {
       throw new NowCoderAdapterError("request.invalid", "Run a valid immutable code artifact against one NowCoder sample.");
     }
-    if (!authorized) throw new NowCoderAdapterError("confirmation.required", "Explicit user confirmation is required before uploading code for a platform run.");
+    if (this.runJobs.has(parsed.data.requestId) || this.reservedRunRequestIds.has(parsed.data.requestId)) {
+      throw new NowCoderAdapterError("policy.blocked", "This platform-run requestId was already prepared or dispatched; use oj_poll_run after dispatch.");
+    }
+    this.reservedRunRequestIds.add(parsed.data.requestId);
+    try {
     const languageId = parsed.data.code.platformLanguageId;
     if (!languageId || !LANGUAGE_IDS.has(languageId)) throw new NowCoderAdapterError("language.unsupported", "NowCoder does not expose this language ID for the audited ACM editor.");
     if (parsed.data.code.bytes > 1024 * 1024) throw new NowCoderAdapterError("request.invalid", "NowCoder run source must not exceed 1 MiB.");
     assertCodeHash(parsed.data.code.source, parsed.data.code.sha256);
+    safeConfirmationValue(parsed.data.code.languageKey, "Language name");
     if ((parsed.data.sampleOrdinals?.length ?? 0) > 1) throw new NowCoderAdapterError("request.invalid", "NowCoder platform self-test accepts one sample per run.");
 
-    const startedAt = this.nowIso();
+    const verified = await this.verifyArtifact(parsed.data.code, signal);
     const preparation = await this.gateway.prepareContext(parsed.data.problem.url, undefined, signal);
+    assertProblemMatch(parsed.data.problem, preparation.problem);
     if (!preparation.supportedLanguageIds.includes(languageId)) {
       throw new NowCoderAdapterError("language.unsupported", "This NowCoder problem does not accept the selected language ID.");
     }
     const ordinal = parsed.data.sampleOrdinals?.[0] ?? 1;
     const sample = preparation.samples.find((candidate) => candidate.ordinal === ordinal);
     if (!sample) throw new NowCoderAdapterError("resource.not_found", "The selected NowCoder sample was not found.");
-    const token = await this.gateway.obtainAccessToken(signal);
+    const intentId = randomUUID();
+    const preview: NowCoderPlatformRunPreview = {
+      intentId,
+      expiresAt: new Date(this.now() + INTENT_TTL_MS).toISOString(),
+      requestId: parsed.data.requestId,
+      problem: preparation.problem,
+      submissionTarget: submissionTarget(preparation),
+      languageKey: parsed.data.code.languageKey,
+      platformLanguageId: languageId,
+      filePath: verified.filePath,
+      codeSha256: parsed.data.code.sha256,
+      codeBytes: parsed.data.code.bytes,
+      sampleOrdinal: ordinal
+    };
+    this.runIntents.set(intentId, {
+      preview,
+      request: { ...parsed.data, problem: preparation.problem },
+      preparation,
+      sample,
+      phase: "prepared"
+    });
+    return preview;
+    } catch (error) {
+      this.reservedRunRequestIds.delete(parsed.data.requestId);
+      throw error;
+    }
+  }
+
+  async commitPlatformRun(intentId: string, authorized: boolean, signal?: AbortSignal): Promise<OjRunResult> {
+    const intent = this.runIntents.get(intentId);
+    if (!intent) throw new NowCoderAdapterError("confirmation.expired", "Platform-run preview expired or was already consumed.");
+    if (!authorized) {
+      this.runIntents.delete(intentId);
+      this.reservedRunRequestIds.delete(intent.request.requestId);
+      throw new NowCoderAdapterError("confirmation.required", "Explicit user confirmation is required before uploading code for a platform run.");
+    }
+    if (intent.phase !== "prepared" || Date.parse(intent.preview.expiresAt) <= this.now()) {
+      this.runIntents.delete(intentId);
+      this.reservedRunRequestIds.delete(intent.request.requestId);
+      throw new NowCoderAdapterError("confirmation.expired", "Platform-run preview expired or was already consumed.");
+    }
+    intent.phase = "committing";
+    try {
+      const verified = await this.verifyArtifact(intent.request.code, signal);
+      if (verified.filePath !== intent.preview.filePath) {
+        throw new NowCoderAdapterError("confirmation.mismatch", "The resolved source path changed after confirmation.");
+      }
+    } catch (error) {
+      this.runIntents.delete(intentId);
+      this.reservedRunRequestIds.delete(intent.request.requestId);
+      throw error;
+    }
+    let token: string;
+    try {
+      token = await this.gateway.obtainAccessToken(intent.preparation.teamId, signal);
+    } catch (error) {
+      this.runIntents.delete(intentId);
+      this.reservedRunRequestIds.delete(intent.request.requestId);
+      throw error;
+    }
+    intent.phase = "consumed";
+    const startedAt = this.nowIso();
     const payload: NowCoderJudgeSubmitPayload = {
-      content: parsed.data.code.source,
-      questionId: preparation.questionId,
-      language: languageId,
-      tagId: 8,
+      content: intent.request.code.source,
+      questionId: intent.preparation.questionId,
+      language: intent.preview.platformLanguageId,
+      tagId: intent.preparation.tagId,
       appId: 6,
-      userId: preparation.accountId,
+      userId: intent.preparation.userId,
       submitType: 2,
-      remark: "{contestId: undefined}",
+      remark: contestRemark(intent.preparation.contestId),
       token,
-      selfInputData: sample.input,
-      selfOutputData: sample.output
+      selfInputData: intent.sample.input,
+      selfOutputData: intent.sample.output
     };
     let submitted: Record<string, unknown>;
     try {
       submitted = await this.gateway.submit(payload, signal);
     } catch (error) {
-      if (error instanceof NowCoderAdapterError && (error.code === "network.timeout" || error.code === "upstream.unavailable")) {
-        return runResult(parsed.data, randomUUID(), startedAt, this.nowIso(), ordinal, "failed", "unknown", sample, {}, parsed.data.problem.url);
-      }
-      throw error;
+      this.runIntents.delete(intentId);
+      this.reservedRunRequestIds.delete(intent.request.requestId);
+      if (isDefiniteSubmitRejection(error)) throw error;
+      const result = runResult(intent.request, randomUUID(), startedAt, this.nowIso(), intent.sample.ordinal, "failed", "unknown", intent.sample, {}, intent.request.problem.url);
+      this.runJobs.set(intent.request.requestId, {
+        requestId: intent.request.requestId,
+        jobId: result.jobId,
+        request: compactRunRequest(intent.request),
+        sample: intent.sample,
+        startedAt,
+        problemUrl: intent.request.problem.url,
+        expiresAtMs: this.now() + POLL_JOB_TTL_MS,
+        terminalResult: result
+      });
+      return result;
     }
     const jobId = identifier(submitted.id);
-    if (!jobId) throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder run response did not contain a job ID.");
-    const context = { ...payload, ...submitted, id: jobId, showId: 6 };
-    for (let poll = 0; poll < this.maxPolls; poll += 1) {
+    if (!jobId) {
+      this.runIntents.delete(intentId);
+      const result = runResult(intent.request, randomUUID(), startedAt, this.nowIso(), intent.sample.ordinal, "failed", "unknown", intent.sample, {}, intent.request.problem.url);
+      this.runJobs.set(intent.request.requestId, {
+        requestId: intent.request.requestId,
+        jobId: result.jobId,
+        request: compactRunRequest(intent.request),
+        sample: intent.sample,
+        startedAt,
+        problemUrl: intent.request.problem.url,
+        expiresAtMs: this.now() + POLL_JOB_TTL_MS,
+        terminalResult: result
+      });
+      this.reservedRunRequestIds.delete(intent.request.requestId);
+      return result;
+    }
+    const context = pollContext(payload, submitted, jobId);
+    const job: PlatformRunJob = {
+      requestId: intent.request.requestId,
+      jobId,
+      request: compactRunRequest(intent.request),
+      sample: intent.sample,
+      startedAt,
+      problemUrl: intent.request.problem.url,
+      expiresAtMs: this.now() + POLL_JOB_TTL_MS,
+      context
+    };
+    this.runJobs.set(job.requestId, job);
+    this.runIntents.delete(intentId);
+    this.reservedRunRequestIds.delete(job.requestId);
+    try {
+      return await this.pollRunJob(job, this.maxPolls, signal);
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason ?? error;
+      return runResult(job.request, job.jobId, job.startedAt, undefined, job.sample.ordinal, "running", "judging", job.sample, {}, job.problemUrl);
+    }
+  }
+
+  async pollPlatformRun(input: { requestId: string }, signal?: AbortSignal): Promise<OjRunResult> {
+    if (!input.requestId) throw new NowCoderAdapterError("request.invalid", "Poll a known NowCoder platform-run requestId.");
+    this.purgeExpiredState();
+    const job = this.runJobs.get(input.requestId);
+    if (!job) throw new NowCoderAdapterError("resource.not_found", "NowCoder platform-run request was not found in this process.");
+    return this.pollRunJob(job, 1, signal);
+  }
+
+  cancelPlatformRun(intentId: string): void {
+    const intent = this.runIntents.get(intentId);
+    if (!intent) return;
+    this.runIntents.delete(intentId);
+    this.reservedRunRequestIds.delete(intent.request.requestId);
+  }
+
+  async platformRun(input: OjRunRequest, authorized: boolean, signal?: AbortSignal): Promise<OjRunResult> {
+    const preview = await this.preparePlatformRun(input, signal);
+    return this.commitPlatformRun(preview.intentId, authorized, signal);
+  }
+
+  private async pollRunJob(job: PlatformRunJob, polls: number, signal?: AbortSignal): Promise<OjRunResult> {
+    if (job.terminalResult) return job.terminalResult;
+    if (!job.context) throw new NowCoderAdapterError("internal", "NowCoder platform-run job lost its polling context.");
+    for (let poll = 0; poll < polls; poll += 1) {
       if (poll > 0) await this.sleep(1_000, signal);
-      const statusData = await this.gateway.poll(context, signal);
+      const statusData = await this.gateway.poll(job.context, signal);
+      if (job.terminalResult) return job.terminalResult;
       const status = numeric(statusData.status);
       if (status === undefined) throw new NowCoderAdapterError("upstream.schema_changed", "NowCoder run status did not include a numeric state.");
       if (status < 3) continue;
       const output = text(statusData.userOutput) ?? text(statusData.stdout) ?? "";
       const verdict = status === 28
-        ? normalizeOutput(output) === normalizeOutput(sample.output) ? "accepted" : "wrong_answer"
+        ? normalizeOutput(output) === normalizeOutput(job.sample.output) ? "accepted" : "wrong_answer"
         : judgeVerdict(status, statusData);
-      return runResult(parsed.data, jobId, startedAt, this.nowIso(), ordinal, "completed", verdict, sample, statusData, parsed.data.problem.url);
+      const result = runResult(job.request, job.jobId, job.startedAt, this.nowIso(), job.sample.ordinal, "completed", verdict, job.sample, statusData, job.problemUrl);
+      job.terminalResult = result;
+      return result;
     }
-    return runResult(parsed.data, jobId, startedAt, undefined, ordinal, "running", "judging", sample, {}, parsed.data.problem.url);
+    return runResult(job.request, job.jobId, job.startedAt, undefined, job.sample.ordinal, "running", "judging", job.sample, {}, job.problemUrl);
   }
 
   private purgeExpiredState(): void {
@@ -359,6 +567,15 @@ export class NowCoderJudgeService {
     }
     for (const [operationId, job] of this.jobs) {
       if (job.expiresAtMs <= now) this.jobs.delete(operationId);
+    }
+    for (const [intentId, intent] of this.runIntents) {
+      if (Date.parse(intent.preview.expiresAt) <= now) {
+        this.runIntents.delete(intentId);
+        this.reservedRunRequestIds.delete(intent.request.requestId);
+      }
+    }
+    for (const [requestId, job] of this.runJobs) {
+      if (job.expiresAtMs <= now) this.runJobs.delete(requestId);
     }
   }
 }
@@ -376,6 +593,61 @@ function assertCodeHash(source: string, claimedSha256: string): void {
   }
 }
 
+function assertProblemMatch(requested: OjProblemRef, resolved: OjProblemRef): void {
+  if (
+    requested.platform !== resolved.platform
+    || requested.nativeId !== resolved.nativeId
+    || requested.canonicalId !== resolved.canonicalId
+    || requested.url !== resolved.url
+  ) {
+    throw new NowCoderAdapterError("confirmation.mismatch", "The requested problem reference does not match the official page resolved from its URL.");
+  }
+}
+
+function submissionTarget(preparation: NowCoderJudgePreparation): { kind: "account" | "team"; id: string; contestId?: string } {
+  return {
+    kind: preparation.teamId ? "team" : "account",
+    id: preparation.userId,
+    ...(preparation.contestId ? { contestId: preparation.contestId } : {})
+  };
+}
+
+function contestRemark(contestId?: string): string {
+  return `{contestId: ${contestId ?? "undefined"}}`;
+}
+
+function isDefiniteSubmitRejection(error: unknown): boolean {
+  return error instanceof NowCoderAdapterError && [
+    "submission.rejected",
+    "auth.required",
+    "auth.invalid",
+    "auth.forbidden",
+    "language.unsupported",
+    "request.invalid",
+    "policy.blocked"
+  ].includes(error.code);
+}
+
+function unknownSubmissionResult(requestId: string, preview: OjSubmitPreview, checkedAt: string): OjSubmitResult {
+  return ojSubmitResultSchema.parse({
+    schemaVersion: "oj.submit-result/v1",
+    requestId,
+    intentId: preview.intentId,
+    submissionOperationId: preview.submissionOperationId,
+    state: "outcome_unknown",
+    verdict: "unknown",
+    codeSha256: preview.codeSha256,
+    lastCheckedAt: checkedAt,
+    source: judgeSource(preview.problem.url, checkedAt)
+  });
+}
+
+function cachedSubmissionResult(job: PollJob, requestId: string): OjSubmitResult | undefined {
+  return job.terminalResult === undefined
+    ? undefined
+    : ojSubmitResultSchema.parse({ ...job.terminalResult, requestId });
+}
+
 function numeric(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && /^\d+$/.test(value)) return Number(value);
@@ -390,8 +662,18 @@ function normalizeOutput(value: string): string {
   return value.replace(/\r\n/g, "\n").trimEnd();
 }
 
+interface RunResultRequest {
+  requestId: string;
+  attemptId: string;
+  code: { sha256: string };
+}
+
+function compactRunRequest(request: OjRunRequest): RunResultRequest {
+  return { requestId: request.requestId, attemptId: request.attemptId, code: { sha256: request.code.sha256 } };
+}
+
 function runResult(
-  request: OjRunRequest,
+  request: RunResultRequest,
   jobId: string,
   startedAt: string,
   completedAt: string | undefined,
@@ -470,6 +752,7 @@ function pollContext(
   submitted: Record<string, unknown>,
   jobId: string
 ): Record<string, unknown> {
+  const protectedKeys = new Set(["id", "userId", "appId", "tagId", "submitType", "remark", "token", "showId", "content", "selfInputData", "selfOutputData"]);
   const context: Record<string, unknown> = {
     id: jobId,
     userId: payload.userId,
@@ -481,6 +764,7 @@ function pollContext(
     showId: 6
   };
   for (const [key, value] of Object.entries(submitted)) {
+    if (protectedKeys.has(key)) continue;
     if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key)) continue;
     if (typeof value === "string" && value.length <= 4_096) context[key] = value;
     else if (typeof value === "number" || typeof value === "boolean") context[key] = value;

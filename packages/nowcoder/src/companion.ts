@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { Socket } from "node:net";
 import {
   ojImportPreviewSchema,
   ojImportWindowRequestSchema,
@@ -17,6 +18,8 @@ import { resolveNowCoderProblemLocator } from "./url.js";
 
 const DEFAULT_PORT = 10_043;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const BODY_READ_TIMEOUT_MS = 2_000;
+const SOCKET_IDLE_TIMEOUT_MS = 2_000;
 
 const companionTaskSchema = z.object({
   name: z.string().trim().min(1).max(500),
@@ -44,11 +47,13 @@ type Completion = { ok: true; preview: OjImportPreview } | { ok: false; reason: 
 interface ActiveWindow {
   id: string;
   server: Server;
+  sockets: Set<Socket>;
   expiresAt: string;
+  expiresAtMs: number;
   timer: NodeJS.Timeout;
-  completion: Promise<Completion>;
   resolve: (completion: Completion) => void;
   state: OjImportWindow["state"];
+  closePromise?: Promise<void>;
 }
 
 export interface CompetitiveCompanionImporterOptions {
@@ -61,7 +66,9 @@ export class CompetitiveCompanionImporter {
   private readonly port: number;
   private readonly now: () => number;
   private readonly nowIso: () => string;
+  private readonly completions = new Map<string, Promise<Completion>>();
   private active?: ActiveWindow;
+  private opening = false;
 
   constructor(options: CompetitiveCompanionImporterOptions = {}) {
     this.port = options.port ?? configuredPort(process.env.COMPETITIVE_COMPANION_PORT);
@@ -73,6 +80,11 @@ export class CompetitiveCompanionImporter {
   }
 
   async open(input: OjImportWindowRequest): Promise<OjImportWindow> {
+    if (this.opening) {
+      throw new NowCoderAdapterError("policy.blocked", "A Competitive Companion import window is already opening.");
+    }
+    this.opening = true;
+    try {
     const parsed = ojImportWindowRequestSchema.safeParse(input);
     if (
       !parsed.success
@@ -81,32 +93,39 @@ export class CompetitiveCompanionImporter {
     ) {
       throw new NowCoderAdapterError("request.invalid", "Open a NowCoder-only import window lasting at most 60 seconds.");
     }
-    if (this.active) {
-      throw new NowCoderAdapterError("policy.blocked", "A Competitive Companion import window is already active.");
+    const previous = this.active;
+    if (previous) {
+      if (previous.state === "waiting" && this.now() < previous.expiresAtMs) {
+        throw new NowCoderAdapterError("policy.blocked", "A Competitive Companion import window is already active.");
+      }
+      if (previous.state === "waiting") this.expireWindow(previous);
+      await this.closeWindow(previous, true);
     }
 
     const id = randomUUID();
-    const expiresAt = new Date(this.now() + parsed.data.expiresInMs).toISOString();
+    const expiresAtMs = this.now() + parsed.data.expiresInMs;
+    const expiresAt = new Date(expiresAtMs).toISOString();
     let resolve!: (completion: Completion) => void;
     const completion = new Promise<Completion>((done) => { resolve = done; });
     const server = createServer((request, response) => {
       void this.handleRequest(id, request, response);
     });
+    const sockets = configureServer(server);
     await listen(server, this.port);
     const address = server.address();
     if (!address || typeof address === "string") {
       await closeServer(server);
+      destroySockets(sockets);
       throw new NowCoderAdapterError("internal", "Competitive Companion listener did not expose a TCP port.");
     }
 
+    let active!: ActiveWindow;
     const timer = setTimeout(() => {
-      const active = this.active;
-      if (!active || active.id !== id || active.state !== "waiting") return;
-      active.state = "expired";
-      active.resolve({ ok: false, reason: "expired" });
-      void closeServer(active.server);
+      this.expireWindow(active);
     }, parsed.data.expiresInMs);
-    this.active = { id, server, expiresAt, timer, completion, resolve, state: "waiting" };
+    active = { id, server, sockets, expiresAt, expiresAtMs, timer, resolve, state: "waiting" };
+    this.completions.set(id, completion);
+    this.active = active;
 
     return ojImportWindowSchema.parse({
       schemaVersion: "oj.import-window/v1",
@@ -115,15 +134,20 @@ export class CompetitiveCompanionImporter {
       state: "waiting",
       endpoint: `http://127.0.0.1:${address.port}/`
     });
+    } finally {
+      this.opening = false;
+    }
   }
 
   async complete(windowId: string): Promise<OjImportPreview> {
-    const active = this.active;
-    if (!active || active.id !== windowId) {
+    const completion = this.completions.get(windowId);
+    if (!completion) {
       throw new NowCoderAdapterError("resource.not_found", "Competitive Companion import window was not found.");
     }
-    const result = await active.completion;
-    if (this.active?.id === windowId) this.active = undefined;
+    const result = await completion;
+    this.completions.delete(windowId);
+    const active = this.active;
+    if (active?.id === windowId) await this.closeWindow(active, active.state !== "received");
     if (!result.ok) {
       throw new NowCoderAdapterError(
         result.reason === "expired" ? "network.timeout" : "request.invalid",
@@ -135,36 +159,45 @@ export class CompetitiveCompanionImporter {
 
   async dispose(): Promise<void> {
     const active = this.active;
-    this.active = undefined;
     if (!active) return;
     clearTimeout(active.timer);
     if (active.state === "waiting") active.resolve({ ok: false, reason: "cancelled" });
     active.state = "cancelled";
-    await closeServer(active.server);
+    this.completions.delete(active.id);
+    await this.closeWindow(active, true);
   }
 
   private async handleRequest(id: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const origin = allowedExtensionOrigin(request.headers.origin);
+    if (origin === false) {
+      respond(response, 403, "Browser origin is not allowed.");
+      return;
+    }
     const active = this.active;
     if (!active || active.id !== id || active.state !== "waiting") {
-      respond(response, 410, "Import window is closed.");
+      respond(response, 410, "Import window is closed.", origin);
       return;
     }
     if (request.method === "OPTIONS") {
-      response.writeHead(204, corsHeaders());
+      response.writeHead(204, corsHeaders(origin));
       response.end();
       return;
     }
     if (request.method !== "POST" || request.url !== "/") {
-      respond(response, 404, "POST one Competitive Companion task to /.");
+      respond(response, 404, "POST one Competitive Companion task to /.", origin);
       return;
     }
     if (!/^application\/json\b/i.test(String(request.headers["content-type"] ?? ""))) {
-      respond(response, 415, "Expected application/json.");
+      respond(response, 415, "Expected application/json.", origin);
       return;
     }
 
     try {
-      const body = await readBody(request, MAX_BODY_BYTES);
+      const body = await readBody(request, MAX_BODY_BYTES, BODY_READ_TIMEOUT_MS);
+      if (this.active !== active || active.state !== "waiting") {
+        respond(response, 410, "Import window is closed.", origin);
+        return;
+      }
       const payload = JSON.parse(body) as unknown;
       const document = parseCompetitiveCompanionTask(payload, this.nowIso());
       const preview = ojImportPreviewSchema.parse({
@@ -176,11 +209,26 @@ export class CompetitiveCompanionImporter {
       active.state = "received";
       clearTimeout(active.timer);
       active.resolve({ ok: true, preview });
-      response.writeHead(200, { ...corsHeaders(), "content-type": "application/json; charset=utf-8" });
-      response.end('{"ok":true}', () => { void closeServer(active.server); });
+      response.writeHead(200, { ...corsHeaders(origin), "content-type": "application/json; charset=utf-8" });
+      response.end('{"ok":true}', () => { void this.closeWindow(active, true); });
     } catch {
-      respond(response, 422, "Competitive Companion payload is not a valid NowCoder task.");
+      respond(response, 422, "Competitive Companion payload is not a valid NowCoder task.", origin);
     }
+  }
+
+  private expireWindow(active: ActiveWindow): void {
+    if (this.active !== active || active.state !== "waiting") return;
+    active.state = "expired";
+    clearTimeout(active.timer);
+    active.resolve({ ok: false, reason: "expired" });
+    void this.closeWindow(active, true);
+  }
+
+  private async closeWindow(active: ActiveWindow, force: boolean): Promise<void> {
+    active.closePromise ??= closeServer(active.server);
+    if (force) destroySockets(active.sockets);
+    await active.closePromise;
+    if (this.active === active) this.active = undefined;
   }
 }
 
@@ -276,29 +324,76 @@ function closeServer(server: Server): Promise<void> {
   return new Promise((resolve) => server.close(() => resolve()));
 }
 
-async function readBody(request: IncomingMessage, maxBytes: number): Promise<string> {
+function configureServer(server: Server): Set<Socket> {
+  const sockets = new Set<Socket>();
+  server.requestTimeout = BODY_READ_TIMEOUT_MS;
+  server.headersTimeout = SOCKET_IDLE_TIMEOUT_MS;
+  server.keepAliveTimeout = SOCKET_IDLE_TIMEOUT_MS;
+  server.timeout = SOCKET_IDLE_TIMEOUT_MS;
+  server.maxHeadersCount = 32;
+  server.on("connection", (socket) => {
+    sockets.add(socket);
+    socket.setTimeout(SOCKET_IDLE_TIMEOUT_MS, () => socket.destroy());
+    socket.once("close", () => sockets.delete(socket));
+  });
+  return sockets;
+}
+
+function destroySockets(sockets: Set<Socket>): void {
+  for (const socket of sockets) socket.destroy();
+}
+
+async function readBody(request: IncomingMessage, maxBytes: number, timeoutMs: number): Promise<string> {
   const declared = Number(request.headers["content-length"] ?? 0);
   if (Number.isFinite(declared) && declared > maxBytes) throw new Error("Body too large.");
   const chunks: Buffer[] = [];
   let bytes = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    bytes += buffer.byteLength;
-    if (bytes > maxBytes) throw new Error("Body too large.");
-    chunks.push(buffer);
+  const timeout = setTimeout(() => request.destroy(new Error("Body read deadline exceeded.")), timeoutMs);
+  try {
+    for await (const chunk of request) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      bytes += buffer.byteLength;
+      if (bytes > maxBytes) throw new Error("Body too large.");
+      chunks.push(buffer);
+    }
+    return Buffer.concat(chunks).toString("utf8");
+  } finally {
+    clearTimeout(timeout);
   }
-  return Buffer.concat(chunks).toString("utf8");
 }
 
-function corsHeaders(): Record<string, string> {
+function allowedExtensionOrigin(origin: string | undefined): string | undefined | false {
+  if (origin === undefined) return undefined;
+  try {
+    const parsed = new URL(origin);
+    if (
+      (parsed.protocol !== "chrome-extension:" && parsed.protocol !== "moz-extension:")
+      || parsed.hostname === ""
+      || parsed.username !== ""
+      || parsed.password !== ""
+      || parsed.port !== ""
+      || (parsed.pathname !== "" && parsed.pathname !== "/")
+      || parsed.search !== ""
+      || parsed.hash !== ""
+    ) {
+      return false;
+    }
+    return origin;
+  } catch {
+    return false;
+  }
+}
+
+function corsHeaders(origin?: string): Record<string, string> {
   return {
-    "access-control-allow-origin": "*",
+    ...(origin === undefined ? {} : { "access-control-allow-origin": origin, vary: "Origin" }),
     "access-control-allow-methods": "POST, OPTIONS",
     "access-control-allow-headers": "content-type"
   };
 }
 
-function respond(response: ServerResponse, status: number, message: string): void {
-  response.writeHead(status, { ...corsHeaders(), "content-type": "text/plain; charset=utf-8" });
+function respond(response: ServerResponse, status: number, message: string, origin?: string): void {
+  if (response.destroyed || response.writableEnded || response.headersSent) return;
+  response.writeHead(status, { ...corsHeaders(origin), "content-type": "text/plain; charset=utf-8" });
   response.end(message);
 }

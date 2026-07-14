@@ -26,7 +26,7 @@ import { authStatusMessage, nowCoderAuthStatusSchema, type NowCoderAuthStatus } 
 import { NowCoderPageClient } from "./client.js";
 import { CompetitiveCompanionImporter } from "./companion.js";
 import { NowCoderAdapterError } from "./errors.js";
-import { NOWCODER_JUDGE_LANGUAGES, NowCoderJudgeService } from "./judge.js";
+import { NOWCODER_JUDGE_LANGUAGES, NowCoderJudgeService, type NowCoderPlatformRunPreview } from "./judge.js";
 import { NowCoderPageJudgeGateway } from "./judgeGateway.js";
 import { parseNowCoderProblemHtml } from "./parser.js";
 import { nowCoderProfileSchema, parseNowCoderProfileHtml, type NowCoderProfile } from "./profile.js";
@@ -258,6 +258,10 @@ export class NowCoderProvider {
     return this.judge.getSubmissionPreview(intentId);
   }
 
+  getSubmissionConfirmation(intentId: string): { preview: OjSubmitPreview; filePath: string } {
+    return this.judge.getSubmissionConfirmation(intentId);
+  }
+
   commitSubmission(input: OjSubmitCommitRequest, authorized: boolean, signal?: AbortSignal): Promise<OjSubmitResult> {
     return this.judge.commitSubmission(input, authorized, signal);
   }
@@ -268,6 +272,22 @@ export class NowCoderProvider {
 
   platformRun(input: OjRunRequest, authorized: boolean, signal?: AbortSignal): Promise<OjRunResult> {
     return this.judge.platformRun(input, authorized, signal);
+  }
+
+  preparePlatformRun(input: OjRunRequest, signal?: AbortSignal): Promise<NowCoderPlatformRunPreview> {
+    return this.judge.preparePlatformRun(input, signal);
+  }
+
+  commitPlatformRun(intentId: string, authorized: boolean, signal?: AbortSignal): Promise<OjRunResult> {
+    return this.judge.commitPlatformRun(intentId, authorized, signal);
+  }
+
+  pollPlatformRun(input: { requestId: string }, signal?: AbortSignal): Promise<OjRunResult> {
+    return this.judge.pollPlatformRun(input, signal);
+  }
+
+  cancelPlatformRun(intentId: string): void {
+    this.judge.cancelPlatformRun(intentId);
   }
 
   async getCapabilities(): Promise<OjCapabilities> {

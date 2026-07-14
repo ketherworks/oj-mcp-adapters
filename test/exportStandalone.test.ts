@@ -118,6 +118,7 @@ describe("standalone MCP source export", () => {
     expect(readme).toContain("[简体中文](README.zh-CN.md)");
     expect(readme).toContain("`nowcoder_auth_status`");
     expect(readme).toContain("`oj_commit_submission`");
+    expect(readme).toContain("`oj_poll_run`");
     expect(readme).toContain("## Quick Start");
     expect(readme).toContain("`NOWCODER_SESSION_COOKIE`");
     expect(readme).toContain("--workspace @ketherworks/nowcoder-oj-mcp");
@@ -129,6 +130,7 @@ describe("standalone MCP source export", () => {
     expect(await readFile(join(outputDir, "packages", "nowcoder", "README.zh-CN.md"), "utf8"))
       .not.toContain("@kaiserunix/nowcoder-mcp-server");
     expect(security).toContain("one acceptance authorizes exactly one POST");
+    expect(security).toContain("saved local `file:` URI");
     expect(security).toContain("do not expose authenticated tools through a shared HTTP deployment");
   }, 120_000);
 
