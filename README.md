@@ -39,10 +39,10 @@ Search Luogu for dynamic programming practice problems.
 
 | Platform | What it provides | How it runs |
 | --- | --- | --- |
-| Codeforces | Official API problem search and metadata | Hosted HTTP or local stdio |
-| AtCoder | Exact past-problem lookup and full statements | Hosted HTTP or local stdio |
-| Luogu | Public problem search and statements | Hosted HTTP or local stdio |
-| NowCoder / 牛客 | Search, statements, browser import, profiles, runs, submissions, and judging | Local stdio |
+| [Codeforces](https://github.com/ketherworks/codeforces-mcp-server) | Official API problem search and metadata | Hosted HTTP or local stdio |
+| [AtCoder](https://github.com/ketherworks/atcoder-mcp-server) | Exact past-problem lookup and full statements | Hosted HTTP or local stdio |
+| [Luogu](https://github.com/Kaiserunix/luogu-mcp-server) | Public problem search and statements | Hosted HTTP or local stdio |
+| [NowCoder / 牛客](https://github.com/ketherworks/nowcoder-mcp-server) | Search, statements, browser import, profiles, runs, submissions, and judging | Local stdio |
 | LeetCode Global/CN | Local integration guide for an established upstream MCP | External local stdio |
 
 NowCoder's fuller local workflow is also released as [牛客 MCP Server](https://github.com/ketherworks/nowcoder-mcp-server). For LeetCode, this repository documents the audited upstream setup without redistributing a modified implementation; see the [LeetCode provider guide](docs/providers/leetcode.md).

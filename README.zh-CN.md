@@ -39,10 +39,10 @@
 
 | 平台 | 主要能力 | 运行方式 |
 | --- | --- | --- |
-| Codeforces | 使用官方 API 搜索题目与读取元数据 | 公共 HTTP 或本地 stdio |
-| AtCoder | 精确查找历史题目并读取完整题面 | 公共 HTTP 或本地 stdio |
-| 洛谷 | 搜索公开题目并读取题面 | 公共 HTTP 或本地 stdio |
-| 牛客 / NowCoder | 搜题、题面、浏览器导入、资料、运行、提交与判题 | 本地 stdio |
+| [Codeforces](https://github.com/ketherworks/codeforces-mcp-server) | 使用官方 API 搜索题目与读取元数据 | 公共 HTTP 或本地 stdio |
+| [AtCoder](https://github.com/ketherworks/atcoder-mcp-server) | 精确查找历史题目并读取完整题面 | 公共 HTTP 或本地 stdio |
+| [洛谷](https://github.com/Kaiserunix/luogu-mcp-server) | 搜索公开题目并读取题面 | 公共 HTTP 或本地 stdio |
+| [牛客 / NowCoder](https://github.com/ketherworks/nowcoder-mcp-server) | 搜题、题面、浏览器导入、资料、运行、提交与判题 | 本地 stdio |
 | LeetCode Global/CN | 成熟上游 MCP 的本地接入说明 | 外部本地 stdio |
 
 牛客的完整本地版本发布在 [牛客 MCP Server](https://github.com/ketherworks/nowcoder-mcp-server)。LeetCode 只提供经过审阅的上游接入说明，不在本仓库重新分发修改版源码，详见 [LeetCode 接入说明](docs/providers/leetcode.md)。
