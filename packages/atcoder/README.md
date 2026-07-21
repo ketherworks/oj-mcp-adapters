@@ -56,6 +56,15 @@ Under the hood, this is an anonymous read-only adapter. The server reads canonic
 
 The package also includes a stateless Streamable HTTP Worker entrypoint at `/mcp`. Browser origins are denied unless listed in `ATCODER_MCP_ALLOWED_ORIGINS`.
 
+## Security Bounds
+
+- Requests are limited to canonical HTTPS task pages on `atcoder.jp`.
+- Redirects stay on the same task and locale and are capped at two.
+- Upstream reads have an 8-second timeout and a 2,000,000-byte response limit.
+- Worker requests reject JSON-RPC batches and bodies above 65,536 bytes.
+- HTML parsing and returned text are bounded; executable markup and unsafe content URLs are removed.
+- Unknown page structures fail with `upstream.schema_changed` instead of returning partial statements.
+
 ## Development
 
 ```sh
