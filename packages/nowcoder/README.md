@@ -52,9 +52,17 @@ Run the first sample for my saved main.cpp on NowCoder.
 Prepare my saved main.cpp for submission.
 ```
 
-For browser import, install [Competitive Companion](https://github.com/jmerle/competitive-companion), set its custom port to `10043`, call `oj_open_import_window`, click the green plus on the problem page, then call `oj_complete_import`. The listener closes after one problem.
+## What It Can Do
 
-## Tools
+| Workflow | Available actions |
+| --- | --- |
+| Problems | Search the ACM catalog and read normalized statements, samples, limits, and tags. |
+| Browser import | Receive one problem from Competitive Companion on a loopback-only port. |
+| Account | Check the local login state, read a compact profile, and list submissions without source code. |
+| Run | Upload a confirmed immutable code snapshot for one platform sample run, then poll the result. |
+| Submit | Build a two-minute preview, ask for confirmation, submit once, and poll without resubmitting. |
+
+## Tool Reference
 
 - `oj_capabilities`: discovers the active transport, authentication mode, operation risk, and language support.
 - `oj_health`: reports transport and parser health from real adapter activity.
@@ -78,6 +86,10 @@ For browser import, install [Competitive Companion](https://github.com/jmerle/co
 3. Accept to create one real submission, then call `oj_poll_submission` for the verdict.
 
 Declining or cancelling creates no submission. An ambiguous network timeout returns `outcome_unknown` and is never retried automatically.
+
+## Browser Import
+
+Install [Competitive Companion](https://github.com/jmerle/competitive-companion) and set its custom port to `10043`. Call `oj_open_import_window`, click the green plus on the problem page, then call `oj_complete_import`. The loopback listener closes after receiving one problem or after 60 seconds.
 
 ## Problem IDs
 

@@ -28,7 +28,8 @@
     "dist/worker.d.ts.map",
     "wrangler.jsonc",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md"
   ],
   "scripts": {
     "clean": "node scripts/clean.mjs",

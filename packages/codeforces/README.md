@@ -1,5 +1,7 @@
 # Codeforces MCP Server
 
+[简体中文](README.zh-CN.md)
+
 Search official Codeforces problem metadata from an MCP client. It is useful for finding practice problems by title, id, or tag.
 
 ## Quick Start
@@ -22,12 +24,14 @@ Find five beginner Codeforces problems tagged implementation.
 Get the metadata for Codeforces problem 71/A.
 ```
 
-## Tools
+## What It Can Do
 
-- `oj_capabilities`
-- `oj_health`
-- `oj_search_problems`
-- `codeforces_get_problem_metadata`
+| Tool | Purpose |
+| --- | --- |
+| `oj_capabilities` | Report the available Codeforces read operations and transport. |
+| `oj_health` | Report service health and the latest official API observation. |
+| `oj_search_problems` | Search the official problemset by title, id, rating, or tag. |
+| `codeforces_get_problem_metadata` | Fetch one problem's official metadata by native id. |
 
 The adapter exposes official problem metadata only. It does not authenticate, fetch problem statements, run code, or submit solutions. Search accepts the shared `oj.search-request/v1` fields `requestId`, `platform: "codeforces"`, `query`, and `limit`; cursors and locale selection are not supported by this full-problemset API.
 

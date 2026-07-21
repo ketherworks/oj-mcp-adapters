@@ -115,6 +115,7 @@ describe("Luogu package deployment metadata", () => {
       "dist/worker.d.ts.map",
       "wrangler.jsonc",
       "README.md",
+      "README.zh-CN.md",
       "LICENSE",
       "THIRD_PARTY_NOTICES.md"
     ]);

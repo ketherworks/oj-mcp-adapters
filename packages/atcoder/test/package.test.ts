@@ -129,7 +129,7 @@ describe("AtCoder package deployment metadata", () => {
     const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
 
     expect(packageJson.license).toBe("MIT");
-    expect(packageJson.files).toEqual(expect.arrayContaining(["LICENSE", "README.md"]));
+    expect(packageJson.files).toEqual(expect.arrayContaining(["LICENSE", "README.md", "README.zh-CN.md"]));
     expect(license).toContain("MIT License");
     expect(readme).toContain("anonymous read-only");
     expect(readme).toContain("No authentication, code execution, or submission tools");
@@ -167,7 +167,8 @@ describe("AtCoder package deployment metadata", () => {
       "dist/worker.d.ts.map",
       "wrangler.jsonc",
       "LICENSE",
-      "README.md"
+      "README.md",
+      "README.zh-CN.md"
     ]);
   });
 
@@ -189,7 +190,14 @@ describe("AtCoder package deployment metadata", () => {
 
       await expect(access(join(packageDirectory, "dist", "worker.js"))).resolves.toBeUndefined();
       expect(paths).toEqual(
-        expect.arrayContaining(["dist/index.js", "dist/worker.js", "wrangler.jsonc", "LICENSE", "README.md"])
+        expect.arrayContaining([
+          "dist/index.js",
+          "dist/worker.js",
+          "wrangler.jsonc",
+          "LICENSE",
+          "README.md",
+          "README.zh-CN.md"
+        ])
       );
       expect(paths.some((path) => path.endsWith(".tsbuildinfo"))).toBe(false);
       expect(paths.some((path) => path.startsWith("src/"))).toBe(false);

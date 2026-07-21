@@ -48,6 +48,7 @@ describe("Codeforces package lifecycle", () => {
 
   test("includes package documentation and license", async () => {
     await expect(access(new URL("../README.md", import.meta.url))).resolves.toBeUndefined();
+    await expect(access(new URL("../README.zh-CN.md", import.meta.url))).resolves.toBeUndefined();
     await expect(access(new URL("../LICENSE", import.meta.url))).resolves.toBeUndefined();
   });
 
@@ -77,6 +78,7 @@ describe("Codeforces package lifecycle", () => {
       "dist/coordinator.d.ts.map",
       "wrangler.jsonc",
       "README.md",
+      "README.zh-CN.md",
       "LICENSE"
     ]);
   });

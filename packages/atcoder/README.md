@@ -1,5 +1,7 @@
 # AtCoder MCP Server
 
+[简体中文](README.zh-CN.md)
+
 Find and read past AtCoder problems from an MCP client. The server returns the statement, samples, limits, sanitized HTML, and source metadata for an exact task URL or contest/task id.
 
 ## Quick Start
@@ -25,7 +27,7 @@ Fetch AtCoder problem abc086_a and show its samples.
 
 For local stdio, build the workspace with Node.js 22 or newer and run `npm start` from this package.
 
-## Tools
+## What It Can Do
 
 - `oj_capabilities`: describes the available AtCoder read operations.
 - `oj_health`: reports local readiness and the latest upstream read.

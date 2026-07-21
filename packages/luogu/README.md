@@ -1,5 +1,7 @@
 # Luogu MCP Server | 洛谷 MCP Server
 
+[简体中文](README.zh-CN.md)
+
 Search and read public Luogu problems from an MCP client. The server returns normalized titles, statements, samples, limits, tags, and source metadata.
 
 ## Quick Start
@@ -22,7 +24,7 @@ Then ask:
 获取洛谷 P1001 的题面和样例。
 ```
 
-## Tools
+## What It Can Do
 
 | Tool | Output | Upstream access |
 | --- | --- | --- |

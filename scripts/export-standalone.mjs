@@ -19,15 +19,34 @@ const platforms = {
     mcpName: "io.github.ketherworks/atcoder",
     binaryName: "atcoder-mcp-server",
     description: "Find and read past AtCoder problems through MCP, locally or over hosted HTTP.",
+    descriptionZh: "通过 MCP 查找并读取 AtCoder 历史题目，可直接连接公共服务，也可以在本地运行。",
     examplePrompt: "Fetch AtCoder problem abc086_a and show its samples.",
+    examplePromptZh: "获取 AtCoder abc086_a 的题面、样例和限制。",
     remoteUrl: "https://api.ksrnyx.top/oj-mcp/atcoder/mcp",
     tools: ["oj_capabilities", "oj_health", "oj_fetch_problem", "oj_search_problems"],
+    toolDescriptions: {
+      oj_capabilities: "Report the available AtCoder read operations and transport.",
+      oj_health: "Report process readiness and the latest upstream read.",
+      oj_fetch_problem: "Fetch one past problem by canonical URL or contest/task id.",
+      oj_search_problems: "Resolve an exact task URL or contest/task identifier."
+    },
+    toolDescriptionsZh: {
+      oj_capabilities: "报告当前可用的 AtCoder 读取能力和传输方式。",
+      oj_health: "报告进程状态和最近一次上游读取结果。",
+      oj_fetch_problem: "按规范 URL 或比赛号/题号读取一道历史题目。",
+      oj_search_problems: "解析准确的题目 URL 或比赛号/题号。"
+    },
     worker: true,
+    localizedReadme: "README.zh-CN.md",
     policy: `Do not use this server during ongoing ABC, ARC, or AGC contests. AtCoder's current
 [generative-AI rules](https://info.atcoder.jp/entry/llm-rules-en) generally prohibit that use.
 This project is intended for practice with past problems. It is unofficial and is not affiliated
 with or endorsed by AtCoder Inc. Problem content remains subject to the
-[AtCoder Terms of Use](https://atcoder.jp/tos?lang=en).`
+[AtCoder Terms of Use](https://atcoder.jp/tos?lang=en).`,
+    policyZh: `请勿在正在进行的 ABC、ARC 或 AGC 比赛中使用。AtCoder 当前的
+[生成式 AI 规则](https://info.atcoder.jp/entry/llm-rules)通常禁止这类使用。
+本项目用于历史题目练习，与 AtCoder Inc. 无隶属或背书关系；题目内容遵循
+[AtCoder 使用条款](https://atcoder.jp/tos)。`
   },
   codeforces: {
     displayName: "Codeforces MCP Server",
@@ -36,11 +55,27 @@ with or endorsed by AtCoder Inc. Problem content remains subject to the
     mcpName: "io.github.ketherworks/codeforces",
     binaryName: "codeforces-mcp-server",
     description: "Search official Codeforces problem metadata through a small MCP server.",
+    descriptionZh: "通过 MCP 搜索 Codeforces 官方公开的题目元数据，可按题名、题号、难度和标签筛选。",
     examplePrompt: "Find five beginner Codeforces problems tagged implementation.",
+    examplePromptZh: "在 Codeforces 找五道适合入门、标签为 implementation 的题。",
     remoteUrl: "https://codeforces-oj-mcp.lantangtang54.workers.dev/mcp",
     tools: ["oj_capabilities", "oj_health", "oj_search_problems", "codeforces_get_problem_metadata"],
+    toolDescriptions: {
+      oj_capabilities: "Report the available Codeforces read operations and transport.",
+      oj_health: "Report service health and the latest official API observation.",
+      oj_search_problems: "Search the official problemset by title, id, rating, or tag.",
+      codeforces_get_problem_metadata: "Fetch one problem's official metadata by native id."
+    },
+    toolDescriptionsZh: {
+      oj_capabilities: "报告当前可用的 Codeforces 读取能力和传输方式。",
+      oj_health: "报告服务状态和最近一次官方 API 读取结果。",
+      oj_search_problems: "按题名、题号、难度或标签搜索官方题库。",
+      codeforces_get_problem_metadata: "按平台题号读取一道题的官方元数据。"
+    },
     worker: true,
-    policy: "This project is unofficial and is not affiliated with or endorsed by Codeforces."
+    localizedReadme: "README.zh-CN.md",
+    policy: "This project is unofficial and is not affiliated with or endorsed by Codeforces.",
+    policyZh: "本项目是社区实现，与 Codeforces 无隶属或背书关系。"
   },
   luogu: {
     displayName: "Luogu MCP Server | 洛谷 MCP Server",
@@ -49,11 +84,27 @@ with or endorsed by AtCoder Inc. Problem content remains subject to the
     mcpName: "io.github.ketherworks/luogu-oj-mcp",
     binaryName: "luogu-mcp-server",
     description: "Search and read public Luogu problems through MCP.",
+    descriptionZh: "通过 MCP 搜索并读取洛谷公开题目。",
     examplePrompt: "在洛谷搜索五道适合入门的动态规划题。",
+    examplePromptZh: "在洛谷搜索五道适合入门的动态规划题。",
     remoteUrl: "https://api.ksrnyx.top/oj-mcp/luogu/mcp",
     tools: ["oj_capabilities", "oj_health", "oj_search_problems", "oj_fetch_problem"],
+    toolDescriptions: {
+      oj_capabilities: "Report the available anonymous Luogu read operations.",
+      oj_health: "Report process readiness and the latest upstream read.",
+      oj_search_problems: "Search public Luogu problems with bounded pagination.",
+      oj_fetch_problem: "Fetch one public problem statement and its samples."
+    },
+    toolDescriptionsZh: {
+      oj_capabilities: "报告当前可用的洛谷匿名读取能力。",
+      oj_health: "报告进程状态和最近一次上游读取结果。",
+      oj_search_problems: "分页搜索洛谷公开题目。",
+      oj_fetch_problem: "读取一道公开题目的题面和样例。"
+    },
     worker: true,
-    policy: "This project is unofficial and is not affiliated with or endorsed by Luogu."
+    localizedReadme: "README.zh-CN.md",
+    policy: "This project is unofficial and is not affiliated with or endorsed by Luogu.",
+    policyZh: "本项目是社区实现，与洛谷无隶属或背书关系。"
   },
   nowcoder: {
     displayName: "NowCoder MCP Server | 牛客 MCP Server",
@@ -136,16 +187,31 @@ export async function exportStandalone({ platform, outputDir, sourceCommit }) {
     const standaloneProviderReadme = platform === "nowcoder"
       ? sourceProviderReadme.replaceAll("@kaiserunix/nowcoder-mcp-server", config.packageName)
       : sourceProviderReadme;
-    const releaseReadme = platform === "nowcoder" ? standaloneProviderReadme : readme(platform, config, sourceCommit);
+    const releaseReadme = platform === "nowcoder"
+      ? standaloneProviderReadme
+      : readme(platform, config, sourceCommit);
+    const packageReleaseReadme = platform === "nowcoder"
+      ? releaseReadme
+      : readme(platform, config, sourceCommit, "../../");
     const implementationReadme = sourceProviderReadme
       .replace(/^# .+\r?\n/, "")
       .trim();
-    const sourceLocalizedReadme = config.localizedReadme
+    const sourceLocalizedReadme = platform === "nowcoder" && config.localizedReadme
       ? await readFile(join(destination, "packages", platform, config.localizedReadme), "utf8")
       : undefined;
-    const localizedReadme = platform === "nowcoder"
+    const copiedLocalizedReadme = platform === "nowcoder"
       ? sourceLocalizedReadme?.replaceAll("@kaiserunix/nowcoder-mcp-server", config.packageName)
       : sourceLocalizedReadme;
+    const releaseLocalizedReadme = config.localizedReadme === undefined
+      ? undefined
+      : platform === "nowcoder"
+        ? copiedLocalizedReadme
+        : readmeZh(platform, config, sourceCommit);
+    const packageLocalizedReadme = config.localizedReadme === undefined
+      ? undefined
+      : platform === "nowcoder"
+        ? releaseLocalizedReadme
+        : readmeZh(platform, config, sourceCommit, "../../");
 
     await Promise.all([
       writeJson(join(destination, "package.json"), rootManifest(platform, config, providerManifest.version)),
@@ -163,18 +229,20 @@ export async function exportStandalone({ platform, outputDir, sourceCommit }) {
         join(destination, "packages", platform, "README.md"),
         platform === "nowcoder"
           ? releaseReadme
-          : `${releaseReadme}\n\n## Provider Implementation Details\n\n${implementationReadme}\n`,
+          : `${packageReleaseReadme}\n\n## Provider Implementation Details\n\n${implementationReadme}\n`,
         "utf8"
       ),
       writeFile(join(destination, "PROVENANCE.md"), provenance(platform, sourceCommit), "utf8"),
       writeFile(join(destination, "SECURITY.md"), securityPolicy(config), "utf8"),
-      ...(localizedReadme === undefined
+      ...(releaseLocalizedReadme === undefined
         ? []
         : [
-            writeFile(join(destination, config.localizedReadme), localizedReadme, "utf8"),
-            ...(platform === "nowcoder"
-              ? [writeFile(join(destination, "packages", platform, config.localizedReadme), localizedReadme, "utf8")]
-              : [])
+            writeFile(join(destination, config.localizedReadme), releaseLocalizedReadme, "utf8"),
+            writeFile(
+              join(destination, "packages", platform, config.localizedReadme),
+              packageLocalizedReadme,
+              "utf8"
+            )
           ]),
       writeFile(join(destination, "scripts", "verify-release-tag.mjs"), verifyReleaseTag(platform), "utf8"),
       writeFile(join(destination, ".github", "workflows", "ci.yml"), ciWorkflow(platform, config), "utf8"),
@@ -289,11 +357,11 @@ function rootManifest(platform, config, providerVersion) {
   };
 }
 
-function readme(platform, config, sourceCommit) {
+function readme(platform, config, sourceCommit, linkPrefix = "") {
   const remote = config.remoteUrl
-    ? `## Hosted Endpoint
+    ? `## Quick Start
 
-The public anonymous read-only endpoint is:
+Add the hosted server to your MCP configuration:
 
 \`\`\`json
 {
@@ -306,7 +374,7 @@ The public anonymous read-only endpoint is:
 }
 \`\`\`
 
-No end-user API key, cookie, or account credential is accepted.
+The endpoint accepts anonymous read requests. It does not need an API key, Cookie, or judge account.
 
 `
     : "";
@@ -322,17 +390,19 @@ MCP configuration files, command-line arguments, logs, or committed files.`
 
 ${localizedNavigation}${config.description}
 
-${remote}Try it with:
+${remote}Then ask:
 
 \`\`\`text
 ${config.examplePrompt}
 \`\`\`
 
-## Tools
+## What It Can Do
 
-${config.tools.map((tool) => `- \`${tool}\``).join("\n")}
+| Tool | Purpose |
+| --- | --- |
+${config.tools.map((tool) => `| \`${tool}\` | ${config.toolDescriptions[tool]} |`).join("\n")}
 
-## Local Stdio
+## Run Locally
 
 Requires Node.js 22 or newer.
 
@@ -357,22 +427,27 @@ MCP client configuration from a source checkout:
 }
 \`\`\`
 
-Tagged GitHub releases attach a standalone npm tarball. npm Registry and official MCP Registry
-publication are intentionally separate steps and are not claimed until their ownership checks pass.
+Tagged GitHub releases attach a standalone npm tarball.
 
-## Source
+## Availability
+
+- Hosted MCP: \`${config.remoteUrl}\`
+- Official MCP Registry: \`${config.mcpName}\`, described by [\`server.json\`](${linkPrefix}server.json)
+- Health status: see the repository homepage or call \`oj_health\`
+
+## Source and Safety
 
 This standalone release is generated from the reviewed
 [Competitive Programming MCP source](${sourceRepository}/tree/${sourceCommit}/packages/${platform}).
 The release package bundles the shared OJ contract implementation, so its runtime does not depend
 on unpublished workspace packages.
 
-## Policy
+## Platform Rules
 
 ${config.policy}
 
 The server exposes no run or submit tool. ${credentialPolicy} See
-[SECURITY.md](SECURITY.md) for the security boundary and [PROVENANCE.md](PROVENANCE.md) for the
+[SECURITY.md](${linkPrefix}SECURITY.md) for the security boundary and [PROVENANCE.md](${linkPrefix}PROVENANCE.md) for the
 canonical source revision.
 
 ## Development
@@ -387,6 +462,102 @@ ${config.worker ? "npm run deploy:dry\n" : ""}\`\`\`
 
 Adapter source code is MIT licensed. Judge problem content and trademarks are not relicensed by
 this repository.
+`;
+}
+
+function readmeZh(platform, config, sourceCommit, linkPrefix = "") {
+  return `# ${config.displayName}
+
+[English](README.md)
+
+${config.descriptionZh}
+
+## 快速开始
+
+把公共服务加入 MCP 配置：
+
+\`\`\`json
+{
+  "servers": {
+    "${platform}": {
+      "type": "http",
+      "url": "${config.remoteUrl}"
+    }
+  }
+}
+\`\`\`
+
+配置后可以直接说：
+
+\`\`\`text
+${config.examplePromptZh}
+\`\`\`
+
+该地址只处理匿名读取，不需要 API Key、Cookie 或 OJ 账号。
+
+## 能做什么
+
+| 工具 | 用途 |
+| --- | --- |
+${config.tools.map((tool) => `| \`${tool}\` | ${config.toolDescriptionsZh[tool]} |`).join("\n")}
+
+## 本地运行
+
+需要 Node.js 22 或更新版本。
+
+\`\`\`bash
+npm ci
+npm run check
+npm run build
+node packages/${platform}/dist/index.js
+\`\`\`
+
+从源码目录启动时的 MCP 配置：
+
+\`\`\`json
+{
+  "servers": {
+    "${platform}": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["C:/替换为实际路径/packages/${platform}/dist/index.js"]
+    }
+  }
+}
+\`\`\`
+
+带版本号的 GitHub Release 会附带独立 npm 压缩包。
+
+## 服务地址
+
+- 公共 MCP：\`${config.remoteUrl}\`
+- 官方 MCP Registry：\`${config.mcpName}\`，定义见 [\`server.json\`](${linkPrefix}server.json)
+- 健康状态：查看仓库主页，或调用 \`oj_health\`
+
+## 来源与安全
+
+该独立仓库由经过审阅的
+[Competitive Programming MCP 源码](${sourceRepository}/tree/${sourceCommit}/packages/${platform})
+生成。发布包内含统一 OJ 契约的运行代码，不依赖未发布的工作区包。
+
+服务不提供运行或提交工具，也不接收 OJ 登录凭据。安全边界见
+[\`SECURITY.md\`](${linkPrefix}SECURITY.md)，对应的源代码版本见 [\`PROVENANCE.md\`](${linkPrefix}PROVENANCE.md)。
+
+## 平台规则
+
+${config.policyZh}
+
+## 开发
+
+\`\`\`bash
+npm ci
+npm run check
+npm run pack:check
+${config.worker ? "npm run deploy:dry\n" : ""}\`\`\`
+
+## 许可证
+
+适配器源码使用 MIT 许可证。题目内容和平台商标不因本仓库重新授权。
 `;
 }
 

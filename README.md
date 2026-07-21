@@ -2,11 +2,25 @@
 
 [简体中文](README.zh-CN.md)
 
-Small MCP servers for finding and reading programming problems from Codeforces, AtCoder, Luogu, and NowCoder. They share one typed OJ contract, but each platform can still run on its own.
+Connect an MCP client to Codeforces, AtCoder, Luogu, or NowCoder. Use a hosted read-only server for problem lookup, or run the NowCoder server locally for browser import, profile, run, and confirmed submission workflows.
 
-## Try A Hosted Server
+## Choose a Platform
 
-The public endpoints accept anonymous read requests and require no API key:
+| Platform | Best for | Start here |
+| --- | --- | --- |
+| [Codeforces](https://github.com/ketherworks/codeforces-mcp-server) | Search official problem metadata by title, id, rating, and tag | Hosted HTTP |
+| [AtCoder](https://github.com/ketherworks/atcoder-mcp-server) | Fetch past-problem statements, samples, and limits by task id or URL | Hosted HTTP |
+| [Luogu / 洛谷](https://github.com/Kaiserunix/luogu-mcp-server) | Search problems and training sets, read statements, and find related practice | Hosted HTTP or local npm |
+| [NowCoder / 牛客](https://github.com/ketherworks/nowcoder-mcp-server) | Search, browser import, profile, run, submission preview, and confirmed submission | Local stdio |
+| LeetCode Global/CN | Use an established upstream MCP through the shared OJ contract | [Local setup guide](docs/providers/leetcode.md) |
+
+Each linked platform repository can be installed on its own. This repository contains the shared contracts, adapters, tests, and release tooling.
+
+## Quick Start
+
+### Hosted problem lookup
+
+Keep only the servers you need:
 
 ```json
 {
@@ -21,45 +35,42 @@ The public endpoints accept anonymous read requests and require no API key:
     },
     "luogu": {
       "type": "http",
-      "url": "https://api.ksrnyx.top/oj-mcp/luogu/mcp"
+      "url": "https://luogu-mcp-server.lantangtang54.workers.dev/mcp"
     }
   }
 }
 ```
 
-Example prompts:
+These endpoints accept anonymous read requests. No API key or judge account is needed.
+
+### NowCoder account actions
+
+Clone and run [NowCoder MCP Server](https://github.com/ketherworks/nowcoder-mcp-server#quick-start) locally. Login state and source code stay in the local stdio process, and every real submission requires a fresh confirmation.
+
+## Try It
 
 ```text
 Find five Codeforces implementation problems for beginners.
-Fetch AtCoder problem abc086_a with its samples.
-Search Luogu for dynamic programming practice problems.
+Fetch AtCoder problem abc086_a and show its samples.
+Search Luogu for dynamic-programming practice problems.
+Import NowCoder problem NC218144 and prepare my saved main.cpp for submission.
 ```
 
-## Platforms
+## Shared Contract
 
-| Platform | What it provides | How it runs |
-| --- | --- | --- |
-| [Codeforces](https://github.com/ketherworks/codeforces-mcp-server) | Official API problem search and metadata | Hosted HTTP or local stdio |
-| [AtCoder](https://github.com/ketherworks/atcoder-mcp-server) | Exact past-problem lookup and full statements | Hosted HTTP or local stdio |
-| [Luogu](https://github.com/Kaiserunix/luogu-mcp-server) | Public problem search and statements | Hosted HTTP or local stdio |
-| [NowCoder / 牛客](https://github.com/ketherworks/nowcoder-mcp-server) | Search, statements, browser import, profiles, runs, submissions, and judging | Local stdio |
-| LeetCode Global/CN | Local integration guide for an established upstream MCP | External local stdio |
+All bundled providers report capabilities and health through the same typed OJ v1 contract. Problem documents, search results, errors, run previews, and submission evidence keep their platform source and timestamps.
 
-NowCoder's fuller local workflow is also released as [牛客 MCP Server](https://github.com/ketherworks/nowcoder-mcp-server). For LeetCode, this repository documents the audited upstream setup without redistributing a modified implementation; see the [LeetCode provider guide](docs/providers/leetcode.md).
+Public HTTP servers expose anonymous reads only. Login state, source code, platform runs, and submissions stay in local processes.
 
 ## Repository Layout
 
 - `packages/contracts`: shared OJ v1 types, codecs, and JSON Schemas.
 - `packages/server-common`: shared MCP result and error helpers.
-- `packages/codeforces`: Codeforces official API provider.
-- `packages/atcoder`: AtCoder public problem-page provider.
-- `packages/luogu`: Luogu public search and statement provider.
-- `packages/nowcoder`: local NowCoder provider with login-aware workflows.
-- `packages/node-http-host`: private-origin HTTP wrapper used by the hosted AtCoder and Luogu endpoints.
+- `packages/codeforces`, `packages/atcoder`, `packages/luogu`, `packages/nowcoder`: platform providers.
+- `packages/node-http-host`: HTTP host used by the hosted read-only adapters.
+- `scripts/export-standalone.mjs`: produces the standalone platform repositories.
 
-Every provider reports its own capabilities and health. Public HTTP endpoints expose anonymous reads only. Login state, source code, platform runs, and submissions stay in local processes.
-
-## Local Development
+## Development
 
 Requires Node.js 22 or newer.
 
@@ -68,7 +79,7 @@ npm ci
 npm run check
 ```
 
-Each deployable package owns fixture tests, package smoke tests, and deployment checks. See [production endpoints](docs/deployment/production-endpoints.md) for the currently verified hosted services.
+Current deployments and verification notes are recorded in [production endpoints](docs/deployment/production-endpoints.md).
 
 ## License
 

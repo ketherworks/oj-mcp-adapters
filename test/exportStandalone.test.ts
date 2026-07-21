@@ -50,8 +50,20 @@ describe("standalone MCP source export", () => {
     expect(provenance).toContain(sourceCommit);
     expect(provenance).toContain("packages/atcoder");
     const packagedReadme = await readFile(join(outputDir, "packages", "atcoder", "README.md"), "utf8");
+    const rootChineseReadme = await readFile(join(outputDir, "README.zh-CN.md"), "utf8");
+    const packagedChineseReadme = await readFile(
+      join(outputDir, "packages", "atcoder", "README.zh-CN.md"),
+      "utf8"
+    );
     expect(packagedReadme).toContain("Tagged GitHub releases attach a standalone npm tarball");
     expect(packagedReadme).toContain("## Security Bounds");
+    expect(packagedReadme).toContain("](../../server.json)");
+    expect(packagedReadme).toContain("](../../SECURITY.md)");
+    expect(rootChineseReadme).toContain("## 快速开始");
+    expect(rootChineseReadme).toContain("## 能做什么");
+    expect(rootChineseReadme).toContain("io.github.ketherworks/atcoder");
+    expect(packagedChineseReadme).toContain("](../../server.json)");
+    expect(packagedChineseReadme).toContain("](../../PROVENANCE.md)");
     expect(await readFile(join(outputDir, ".gitignore"), "utf8")).toContain("release/");
     const lockfile = JSON.parse(await readFile(join(outputDir, "package-lock.json"), "utf8")) as {
       lockfileVersion: number;

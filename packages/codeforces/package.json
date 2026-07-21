@@ -20,6 +20,7 @@
     "dist/coordinator.d.ts.map",
     "wrangler.jsonc",
     "README.md",
+    "README.zh-CN.md",
     "LICENSE"
   ],
   "scripts": {

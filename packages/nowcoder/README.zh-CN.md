@@ -52,9 +52,17 @@ npm run build
 为已保存的 main.cpp 生成提交预览。
 ```
 
-浏览器导题：安装 [Competitive Companion](https://github.com/jmerle/competitive-companion)，把自定义端口设为 `10043`；调用 `oj_open_import_window` 后点击题目页左上角绿色加号，再调用 `oj_complete_import`。接收到一题后监听器立即关闭。
+## 能做什么
 
-## 现有工具
+| 工作流 | 可以完成的操作 |
+| --- | --- |
+| 题目 | 搜索 ACM 题库，读取规范化题面、样例、限制和标签。 |
+| 浏览器导题 | 通过仅监听本机回环地址的端口接收一题 Competitive Companion 数据。 |
+| 账号 | 检查本地登录态，读取精简竞赛资料，并列出不含源码的提交记录。 |
+| 运行 | 确认后上传不可变代码快照，在平台执行一个样例并轮询结果。 |
+| 提交 | 生成两分钟有效的预览，确认后只提交一次，随后只轮询不重提。 |
+
+## 工具参考
 
 - `oj_capabilities`：发现当前传输方式、认证模式、操作风险与语言支持。
 - `oj_health`：根据适配器真实活动报告传输层和解析器健康状态。
@@ -78,6 +86,10 @@ npm run build
 3. 接受后产生一次真实提交；用 `oj_poll_submission` 查看判题结果。
 
 确认被拒绝或取消时提交数为零。提交请求发生网络超时且结果无法确定时返回 `outcome_unknown`，不会自动重试。
+
+## 浏览器导题
+
+安装 [Competitive Companion](https://github.com/jmerle/competitive-companion)，把自定义端口设为 `10043`。调用 `oj_open_import_window` 后点击题目页左上角绿色加号，再调用 `oj_complete_import`。接收到一题或等待 60 秒后，本机回环监听器会关闭。
 
 ## 题目 ID
 
