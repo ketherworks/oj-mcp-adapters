@@ -1,6 +1,6 @@
-# LeetCode Provider
+# LeetCode MCP Provider
 
-LeetCode is an external, local-only provider. This public repository does not ship LeetCode source code, an npm package, a Worker, or a hosted MCP endpoint.
+Use the established `jinzcdev/leetcode-mcp-server` as a local stdio provider for LeetCode Global or CN. This repository documents the compatibility boundary used by the shared OJ contract; credentials and any local adaptation stay on the user's machine.
 
 ## Upstream
 
@@ -9,19 +9,18 @@ LeetCode is an external, local-only provider. This public repository does not sh
 - License: [MIT](https://github.com/jinzcdev/leetcode-mcp-server/blob/v1.3.0/LICENSE)
 - Transport: local stdio
 
-The Student Autocomplete Lab integration uses a separately maintained local adapter. That adapter preserves the upstream copyright and license, pins the audited release, and maps the provider into the shared `OjCapabilities`, `OjProblemDocument`, `OjSearchResult`, `OjProviderHealth`, and `OjError` contracts.
+Consumers can map its responses into `OjCapabilities`, `OjProblemDocument`, `OjSearchResult`, `OjProviderHealth`, and `OjError` without publishing or hosting a modified copy.
 
-## Public Boundary
+## Local Boundary
 
-- No public or shared LeetCode Worker is deployed.
-- No LeetCode session, CSRF token, source code, private profile, submission, editorial, or Premium content is accepted by a public Kether Works endpoint.
-- Authentication, code execution, and submission tools are disabled by default.
-- The extension exposes only an allowlisted local tool surface and requires explicit confirmation before any real submission if that capability is enabled later.
+- Run the provider through local stdio rather than a shared HTTP endpoint.
+- Keep LeetCode sessions, CSRF tokens, source code, profiles, submissions, editorials, and Premium content on the local machine.
+- Keep authentication, code execution, and submission disabled unless a local integration has an explicit confirmation flow.
 - Credentials belong in VS Code SecretStorage. They must not appear in MCP arguments, logs, prompts, Webviews, or repository configuration.
 
 ## Upstream Installation
 
-Users who do not have access to the separately maintained adapter can inspect or run the audited upstream release directly:
+Run the audited upstream release directly:
 
 ```text
 npx -y @jinzcdev/leetcode-mcp-server@1.3.0 --site global

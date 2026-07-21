@@ -6,19 +6,20 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 const repositoryRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const sourceRepository = "https://github.com/ketherworks/oj-mcp-adapters";
+const sourceRepository = "https://github.com/ketherworks/competitive-programming-mcp";
 const excludedNames = new Set(["dist", "node_modules", ".wrangler", "coverage"]);
 const execFileAsync = promisify(execFile);
 const checkoutAction = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0";
 const setupNodeAction = "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020";
 const platforms = {
   atcoder: {
-    displayName: "AtCoder Read-Only MCP Server",
+    displayName: "AtCoder MCP Server",
     repositoryName: "atcoder-mcp-server",
     packageName: "@ketherworks/atcoder-mcp-server",
     mcpName: "io.github.ketherworks/atcoder",
     binaryName: "atcoder-mcp-server",
-    description: "Audited read-only MCP server for exact AtCoder problem statements and samples.",
+    description: "Find and read past AtCoder problems through MCP, locally or over hosted HTTP.",
+    examplePrompt: "Fetch AtCoder problem abc086_a and show its samples.",
     remoteUrl: "https://api.ksrnyx.top/oj-mcp/atcoder/mcp",
     tools: ["oj_capabilities", "oj_health", "oj_fetch_problem", "oj_search_problems"],
     worker: true,
@@ -29,36 +30,39 @@ with or endorsed by AtCoder Inc. Problem content remains subject to the
 [AtCoder Terms of Use](https://atcoder.jp/tos?lang=en).`
   },
   codeforces: {
-    displayName: "Codeforces Read-Only MCP Server",
+    displayName: "Codeforces MCP Server",
     repositoryName: "codeforces-mcp-server",
     packageName: "@ketherworks/codeforces-mcp-server",
     mcpName: "io.github.ketherworks/codeforces",
     binaryName: "codeforces-mcp-server",
-    description: "Bounded read-only MCP server for official Codeforces problem metadata.",
+    description: "Search official Codeforces problem metadata through a small MCP server.",
+    examplePrompt: "Find five beginner Codeforces problems tagged implementation.",
     remoteUrl: "https://codeforces-oj-mcp.lantangtang54.workers.dev/mcp",
     tools: ["oj_capabilities", "oj_health", "oj_search_problems", "codeforces_get_problem_metadata"],
     worker: true,
     policy: "This project is unofficial and is not affiliated with or endorsed by Codeforces."
   },
   luogu: {
-    displayName: "Luogu OJ MCP Adapter",
-    repositoryName: "luogu-oj-mcp",
+    displayName: "Luogu MCP Server | 洛谷 MCP Server",
+    repositoryName: "luogu-mcp-server",
     packageName: "@ketherworks/luogu-oj-mcp",
     mcpName: "io.github.ketherworks/luogu-oj-mcp",
     binaryName: "luogu-mcp-server",
-    description: "Strict read-only Luogu adapter for the federated OJ MCP contract.",
+    description: "Search and read public Luogu problems through MCP.",
+    examplePrompt: "在洛谷搜索五道适合入门的动态规划题。",
     remoteUrl: "https://api.ksrnyx.top/oj-mcp/luogu/mcp",
     tools: ["oj_capabilities", "oj_health", "oj_search_problems", "oj_fetch_problem"],
     worker: true,
     policy: "This project is unofficial and is not affiliated with or endorsed by Luogu."
   },
   nowcoder: {
-    displayName: "NowCoder ACM Problem MCP Server",
-    repositoryName: "nowcoder-oj-mcp",
+    displayName: "NowCoder MCP Server | 牛客 MCP Server",
+    repositoryName: "nowcoder-mcp-server",
     packageName: "@ketherworks/nowcoder-oj-mcp",
-    mcpName: "io.github.ketherworks/nowcoder-oj-mcp",
+    mcpName: "io.github.ketherworks/nowcoder-mcp-server",
     binaryName: "nowcoder-mcp-server",
-    description: "Local NowCoder ACM MCP server for search, import, profiles, runs, submissions, and judging.",
+    description: "牛客题库搜索、导题、运行与提交的本地 MCP Server | NowCoder MCP for AI coding agents.",
+    examplePrompt: "在牛客搜索数组入门题，并获取第一道题的题面和样例。",
     tools: [
       "oj_capabilities", "oj_health", "oj_search_problems", "oj_fetch_problem",
       "oj_open_import_window", "oj_complete_import", "oj_fetch_profile", "oj_list_submissions",
@@ -318,16 +322,17 @@ MCP configuration files, command-line arguments, logs, or committed files.`
 
 ${localizedNavigation}${config.description}
 
-This is a standalone release workspace generated from the audited
-[Kether Works OJ adapter source](${sourceRepository}/tree/${sourceCommit}/packages/${platform}).
-The release package bundles the shared OJ contract implementation, so its runtime does not depend
-on unpublished workspace packages.
+${remote}Try it with:
+
+\`\`\`text
+${config.examplePrompt}
+\`\`\`
 
 ## Tools
 
 ${config.tools.map((tool) => `- \`${tool}\``).join("\n")}
 
-${remote}## Local Stdio
+## Local Stdio
 
 Requires Node.js 22 or newer.
 
@@ -354,6 +359,13 @@ MCP client configuration from a source checkout:
 
 Tagged GitHub releases attach a standalone npm tarball. npm Registry and official MCP Registry
 publication are intentionally separate steps and are not claimed until their ownership checks pass.
+
+## Source
+
+This standalone release is generated from the reviewed
+[Competitive Programming MCP source](${sourceRepository}/tree/${sourceCommit}/packages/${platform}).
+The release package bundles the shared OJ contract implementation, so its runtime does not depend
+on unpublished workspace packages.
 
 ## Policy
 

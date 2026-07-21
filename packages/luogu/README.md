@@ -1,8 +1,26 @@
-# Luogu MCP Adapter
+# Luogu MCP Server | 洛谷 MCP Server
 
-Anonymous, read-only Luogu problem discovery for the shared OJ MCP contracts.
-The package targets Node 22, TypeScript ESM/NodeNext, MCP SDK `1.29.0`, and Zod
-`4.3.6`.
+Search and read public Luogu problems from an MCP client. The server returns normalized titles, statements, samples, limits, tags, and source metadata.
+
+## Quick Start
+
+```json
+{
+  "servers": {
+    "luogu": {
+      "type": "http",
+      "url": "https://api.ksrnyx.top/oj-mcp/luogu/mcp"
+    }
+  }
+}
+```
+
+Then ask:
+
+```text
+在洛谷搜索五道适合入门的动态规划题。
+获取洛谷 P1001 的题面和样例。
+```
 
 ## Tools
 

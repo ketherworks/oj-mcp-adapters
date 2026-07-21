@@ -1,14 +1,14 @@
-# NowCoder MCP Server
+# NowCoder MCP Server | 牛客 MCP Server
 
 [简体中文](README.zh-CN.md)
 
-Bring NowCoder ACM problems and login-aware workflows directly into VS Code agents through a typed local MCP server.
+A local MCP server for searching NowCoder problems, reading statements, importing browser tasks, running saved code, and submitting after confirmation.
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/ketherworks/nowcoder-oj-mcp.git
-cd nowcoder-oj-mcp
+git clone https://github.com/ketherworks/nowcoder-mcp-server.git
+cd nowcoder-mcp-server
 npm ci
 npm run build
 ```
@@ -29,7 +29,7 @@ Open **MCP: Open User Configuration** in VS Code and add:
     "nowcoder": {
       "type": "stdio",
       "command": "node",
-      "args": ["C:/path/to/nowcoder-oj-mcp/packages/nowcoder/dist/index.js"],
+      "args": ["C:/path/to/nowcoder-mcp-server/packages/nowcoder/dist/index.js"],
       "env": {
         "NOWCODER_SESSION_COOKIE": "${input:nowcoder-cookie}",
         "COMPETITIVE_COMPANION_PORT": "10043"

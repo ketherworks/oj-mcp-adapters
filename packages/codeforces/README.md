@@ -1,6 +1,26 @@
 # Codeforces MCP Server
 
-Public, read-only MCP adapter for the official Codeforces API.
+Search official Codeforces problem metadata from an MCP client. It is useful for finding practice problems by title, id, or tag.
+
+## Quick Start
+
+```json
+{
+  "servers": {
+    "codeforces": {
+      "type": "http",
+      "url": "https://codeforces-oj-mcp.lantangtang54.workers.dev/mcp"
+    }
+  }
+}
+```
+
+Then ask:
+
+```text
+Find five beginner Codeforces problems tagged implementation.
+Get the metadata for Codeforces problem 71/A.
+```
 
 ## Tools
 

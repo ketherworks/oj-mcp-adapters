@@ -1,14 +1,14 @@
-# NowCoder MCP Server
+# 牛客 MCP Server | NowCoder MCP Server
 
 [English](README.md)
 
-把牛客 ACM 题库与登录态工作流直接接进 VS Code Agent：本地运行、类型化输出、开箱即用。
+一个把牛客题目接入 MCP 客户端的本地工具。可以搜题、读取题面、从浏览器导题，并在确认后运行或提交已保存的代码。
 
 ## 快速开始
 
 ```bash
-git clone https://github.com/ketherworks/nowcoder-oj-mcp.git
-cd nowcoder-oj-mcp
+git clone https://github.com/ketherworks/nowcoder-mcp-server.git
+cd nowcoder-mcp-server
 npm ci
 npm run build
 ```
@@ -29,7 +29,7 @@ npm run build
     "nowcoder": {
       "type": "stdio",
       "command": "node",
-      "args": ["C:/替换为实际路径/nowcoder-oj-mcp/packages/nowcoder/dist/index.js"],
+      "args": ["C:/替换为实际路径/nowcoder-mcp-server/packages/nowcoder/dist/index.js"],
       "env": {
         "NOWCODER_SESSION_COOKIE": "${input:nowcoder-cookie}",
         "COMPETITIVE_COMPANION_PORT": "10043"

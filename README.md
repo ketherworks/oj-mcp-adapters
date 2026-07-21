@@ -1,51 +1,75 @@
-# OJ MCP Adapters
+# Competitive Programming MCP | Algorithm Practice MCP
 
-Independent Model Context Protocol adapters for online judges used by Student Autocomplete Lab.
+[简体中文](README.zh-CN.md)
 
-The source is organized as an npm workspace, while every platform builds and deploys as an isolated process or Worker. Public remote entrypoints expose only anonymous read operations. Browser state, account credentials, code execution, and submissions remain local.
+Small MCP servers for finding and reading programming problems from Codeforces, AtCoder, Luogu, and NowCoder. They share one typed OJ contract, but each platform can still run on its own.
 
-## Packages
+## Try A Hosted Server
 
-- `@kaiserunix/oj-mcp-contracts`: generated OJ contract v1 codecs and JSON Schemas.
-- `@kaiserunix/oj-mcp-server-common`: shared MCP server plumbing without platform behavior.
-- `@kaiserunix/codeforces-mcp-server`: Codeforces official API read provider.
-- `@kaiserunix/nowcoder-mcp-server`: local stdio adapter for public NowCoder problem pages.
-- `@kaiserunix/atcoder-mcp-server`: anonymous official AtCoder HTML provider.
-- `@kaiserunix/luogu-mcp-server`: anonymous Luogu search and problem provider.
-- `@kaiserunix/oj-mcp-node-http-host`: private-origin HTTP wrapper for AtCoder and Luogu.
+The public endpoints accept anonymous read requests and require no API key:
 
-## Deployment Matrix
+```json
+{
+  "servers": {
+    "codeforces": {
+      "type": "http",
+      "url": "https://codeforces-oj-mcp.lantangtang54.workers.dev/mcp"
+    },
+    "atcoder": {
+      "type": "http",
+      "url": "https://api.ksrnyx.top/oj-mcp/atcoder/mcp"
+    },
+    "luogu": {
+      "type": "http",
+      "url": "https://api.ksrnyx.top/oj-mcp/luogu/mcp"
+    }
+  }
+}
+```
 
-| Platform | Public remote | Local stdio | Upstream boundary |
-| --- | --- | --- | --- |
-| Codeforces | Cloudflare Worker | Yes | Official public API |
-| LeetCode Global/CN | No | External local provider | Audited upstream MCP; see [LeetCode provider](docs/providers/leetcode.md) |
-| AtCoder | Trusted Node HTTPS origin | Yes | Official public HTML |
-| Luogu | Trusted Node HTTPS origin | Yes | Anonymous public page endpoints |
-| NowCoder | No | Yes | Public page adapter with DNS pinning |
+Example prompts:
 
-AtCoder and Luogu can also run behind the private
-[`node-http-host`](packages/node-http-host/README.md) wrapper when a judge
-rejects shared Cloudflare Worker egress. The wrapper preserves the exact MCP
-tool surface and sits behind a trusted HTTPS reverse proxy; it is not a
-general-purpose fetch relay.
+```text
+Find five Codeforces implementation problems for beginners.
+Fetch AtCoder problem abc086_a with its samples.
+Search Luogu for dynamic programming practice problems.
+```
 
-The Worker entrypoints remain buildable for controlled deployments, but live
-upstream reads must pass from the chosen egress before publication. The
-current shared Cloudflare deployment is used only for Codeforces because its
-official API passed that gate. See [production endpoints](docs/deployment/production-endpoints.md).
+## Platforms
 
-Remote Workers expose only anonymous `R0_public_read` tools. They enforce bounded request bodies, reject JSON-RPC batches, and bound upstream concurrency, response sizes, and timeouts. Credentials, browser sessions, private profiles, code execution, and submissions are not accepted by these entrypoints. NowCoder remains local because its page and anti-bot behavior is not suitable for a shared remote service. LeetCode is intentionally excluded from this repository's source, packages, and deployments.
+| Platform | What it provides | How it runs |
+| --- | --- | --- |
+| Codeforces | Official API problem search and metadata | Hosted HTTP or local stdio |
+| AtCoder | Exact past-problem lookup and full statements | Hosted HTTP or local stdio |
+| Luogu | Public problem search and statements | Hosted HTTP or local stdio |
+| NowCoder / 牛客 | Search, statements, browser import, profiles, runs, submissions, and judging | Local stdio |
+| LeetCode Global/CN | Local integration guide for an established upstream MCP | External local stdio |
 
-## External LeetCode Provider
+NowCoder's fuller local workflow is also released as [牛客 MCP Server](https://github.com/ketherworks/nowcoder-mcp-server). For LeetCode, this repository documents the audited upstream setup without redistributing a modified implementation; see the [LeetCode provider guide](docs/providers/leetcode.md).
 
-This project does not redistribute or host a LeetCode MCP implementation. The learning-workbench integration uses an audited local provider derived from [`jinzcdev/leetcode-mcp-server` v1.3.0](https://github.com/jinzcdev/leetcode-mcp-server/releases/tag/v1.3.0), with the extension translating its responses into the public OJ contract. See [docs/providers/leetcode.md](docs/providers/leetcode.md) for the source, boundaries, and local setup.
+## Repository Layout
 
-## Development
+- `packages/contracts`: shared OJ v1 types, codecs, and JSON Schemas.
+- `packages/server-common`: shared MCP result and error helpers.
+- `packages/codeforces`: Codeforces official API provider.
+- `packages/atcoder`: AtCoder public problem-page provider.
+- `packages/luogu`: Luogu public search and statement provider.
+- `packages/nowcoder`: local NowCoder provider with login-aware workflows.
+- `packages/node-http-host`: private-origin HTTP wrapper used by the hosted AtCoder and Luogu endpoints.
+
+Every provider reports its own capabilities and health. Public HTTP endpoints expose anonymous reads only. Login state, source code, platform runs, and submissions stay in local processes.
+
+## Local Development
+
+Requires Node.js 22 or newer.
 
 ```powershell
 npm ci
 npm run check
 ```
 
-Each deployable package also owns fixture tests, a clean package smoke test, and a Wrangler dry run. Normal tests do not make live judge requests.
+Each deployable package owns fixture tests, package smoke tests, and deployment checks. See [production endpoints](docs/deployment/production-endpoints.md) for the currently verified hosted services.
+
+## License
+
+Adapter source code is MIT licensed. Problem statements, platform names, and trademarks remain subject to their respective owners' terms.
